@@ -1,5 +1,6 @@
 /*
 Copyright 2019 The Kubernetes Authors.
+Copyright 2021 Rackspace US, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +25,6 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack/loadbalancer/v2/apiversions"
 	"github.com/gophercloud/gophercloud/openstack/loadbalancer/v2/listeners"
-	"github.com/gophercloud/gophercloud/openstack/loadbalancer/v2/loadbalancers"
 	"github.com/gophercloud/gophercloud/openstack/loadbalancer/v2/pools"
 	"github.com/gophercloud/gophercloud/pagination"
 	version "github.com/hashicorp/go-version"
@@ -32,6 +32,8 @@ import (
 	"k8s.io/klog"
 
 	cpoerrors "github.com/os-pc/cloud-provider-rackspace/pkg/util/errors"
+
+	"github.com/os-pc/gocloudlb/loadbalancers"
 )
 
 const (
@@ -112,7 +114,7 @@ func IsOctaviaFeatureSupported(client *gophercloud.ServiceClient, feature int) b
 	return false
 }
 
-func waitLoadbalancerActive(client *gophercloud.ServiceClient, loadbalancerID string) error {
+func waitLoadbalancerActive(client *gophercloud.ServiceClient, loadbalancerID uint64) error {
 	backoff := wait.Backoff{
 		Duration: loadbalancerActiveInitDelay,
 		Factor:   loadbalancerActiveFactor,
@@ -124,9 +126,9 @@ func waitLoadbalancerActive(client *gophercloud.ServiceClient, loadbalancerID st
 		if err != nil {
 			return false, err
 		}
-		if loadbalancer.ProvisioningStatus == activeStatus {
+		if loadbalancer.Status == activeStatus {
 			return true, nil
-		} else if loadbalancer.ProvisioningStatus == errorStatus {
+		} else if loadbalancer.Status == errorStatus {
 			return true, fmt.Errorf("loadbalancer has gone into ERROR state")
 		} else {
 			return false, nil
@@ -138,7 +140,7 @@ func waitLoadbalancerActive(client *gophercloud.ServiceClient, loadbalancerID st
 }
 
 // UpdateListener updates a listener and wait for the lb active
-func UpdateListener(client *gophercloud.ServiceClient, lbID string, listenerID string, opts listeners.UpdateOpts) error {
+func UpdateListener(client *gophercloud.ServiceClient, lbID uint64, listenerID string, opts listeners.UpdateOpts) error {
 	if _, err := listeners.Update(client, listenerID, opts).Extract(); err != nil {
 		return err
 	}
@@ -151,7 +153,7 @@ func UpdateListener(client *gophercloud.ServiceClient, lbID string, listenerID s
 }
 
 // CreateListener creates a new listener
-func CreateListener(client *gophercloud.ServiceClient, lbID string, opts listeners.CreateOpts) (*listeners.Listener, error) {
+func CreateListener(client *gophercloud.ServiceClient, lbID uint64, opts listeners.CreateOpts) (*listeners.Listener, error) {
 	listener, err := listeners.Create(client, opts).Extract()
 	if err != nil {
 		return nil, err
@@ -164,28 +166,47 @@ func CreateListener(client *gophercloud.ServiceClient, lbID string, opts listene
 	return listener, nil
 }
 
-// GetLoadbalancerByName retrieves loadbalancer object
-func GetLoadbalancerByName(client *gophercloud.ServiceClient, name string) (*loadbalancers.LoadBalancer, error) {
-	opts := loadbalancers.ListOpts{
-		Name: name,
-	}
+func getLoadBalancers(client *gophercloud.ServiceClient, opts loadbalancers.ListOpts) ([]loadbalancers.LoadBalancer, error) {
 	allPages, err := loadbalancers.List(client, opts).AllPages()
 	if err != nil {
 		return nil, err
 	}
-	loadbalancerList, err := loadbalancers.ExtractLoadBalancers(allPages)
+	allLoadbalancers, err := loadbalancers.ExtractLoadBalancers(allPages)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(loadbalancerList) > 1 {
-		return nil, ErrMultipleResults
+	return allLoadbalancers, nil
+}
+
+// GetLoadbalancerByName get the load balancer which is in valid status by the given name.
+func GetLoadbalancerByName(client *gophercloud.ServiceClient, name string) (*loadbalancers.LoadBalancer, error) {
+	var validLBs []loadbalancers.LoadBalancer
+
+	allLoadbalancers, err := getLoadBalancers(client, loadbalancers.ListOpts{})
+	if err != nil {
+		return nil, err
 	}
-	if len(loadbalancerList) == 0 {
+
+	if len(allLoadbalancers) == 0 {
 		return nil, ErrNotFound
 	}
 
-	return &loadbalancerList[0], nil
+	for _, lb := range allLoadbalancers {
+		// All the Status could be found here https://docs.rackspace.com/docs/cloud-load-balancers/v1/api-reference/load-balancers
+		if lb.Name == name && (lb.Status != "DELETED" && lb.Status != "PENDING_DELETE") {
+			validLBs = append(validLBs, lb)
+		}
+	}
+
+	if len(validLBs) > 1 {
+		return nil, ErrMultipleResults
+	}
+	if len(validLBs) == 0 {
+		return nil, ErrNotFound
+	}
+
+	return &validLBs[0], nil
 }
 
 // GetListenerByName gets a listener by its name, raise error if not found or get multiple ones.
@@ -258,10 +279,10 @@ func GetPoolByName(client *gophercloud.ServiceClient, name string, lbID string) 
 }
 
 // DeleteLoadbalancer deletes a loadbalancer with all its child objects.
-func DeleteLoadbalancer(client *gophercloud.ServiceClient, lbID string) error {
-	err := loadbalancers.Delete(client, lbID, loadbalancers.DeleteOpts{Cascade: true}).ExtractErr()
+func DeleteLoadbalancer(client *gophercloud.ServiceClient, lbID uint64) error {
+	err := loadbalancers.Delete(client, lbID).ExtractErr()
 	if err != nil && !cpoerrors.IsNotFound(err) {
-		return fmt.Errorf("error deleting loadbalancer %s: %v", lbID, err)
+		return fmt.Errorf("error deleting loadbalancer %d: %v", lbID, err)
 	}
 
 	return nil

@@ -102,17 +102,11 @@ func (i *Instances) NodeAddressesByProviderID(ctx context.Context, providerID st
 	}
 
 	server, err := servers.Get(i.compute, instanceID).Extract()
-
 	if err != nil {
 		return []v1.NodeAddress{}, err
 	}
 
-	interfaces, err := getAttachedInterfacesByID(i.compute, server.ID)
-	if err != nil {
-		return []v1.NodeAddress{}, err
-	}
-
-	addresses, err := nodeAddresses(server, interfaces, i.networkingOpts)
+	addresses, err := nodeAddresses(server, i.networkingOpts)
 	if err != nil {
 		return []v1.NodeAddress{}, err
 	}
