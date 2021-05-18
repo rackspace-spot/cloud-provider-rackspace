@@ -6,6 +6,7 @@ VERSION     ?= $(shell git describe --exact-match 2> /dev/null || \
 
 TARGET      := rackspace-cloud-controller-manager
 LDFLAGS     := "-w -s -X 'github.com/os-pc/cloud-provider-rackspace/pkg/version.Version=${VERSION}'"
+REGISTRY    := ospc
 
 default: build
 
@@ -27,3 +28,9 @@ build: fmtcheck
 
 clean:
 	rm -rf $(TARGET)
+
+image: build
+	docker build -t $(REGISTRY)/$(TARGET):$(VERSION) .
+
+push: image
+	docker push $(REGISTRY)/$(TARGET):$(VERSION)
