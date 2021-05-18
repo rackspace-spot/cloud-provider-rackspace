@@ -1,4 +1,4 @@
-module k8s.io/cloud-provider-openstack
+module github.com/os-pc/cloud-provider-rackspace
 
 go 1.13
 

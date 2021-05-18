@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"strings"
 
+	netsets "github.com/os-pc/cloud-provider-rackspace/pkg/util/net/sets"
 	"k8s.io/api/core/v1"
-	netsets "k8s.io/cloud-provider-openstack/pkg/util/net/sets"
 )
 
 const (

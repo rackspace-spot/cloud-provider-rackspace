@@ -48,10 +48,10 @@ import (
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog"
 
-	v1service "k8s.io/cloud-provider-openstack/pkg/api/v1/service"
-	cpoutil "k8s.io/cloud-provider-openstack/pkg/util"
-	cpoerrors "k8s.io/cloud-provider-openstack/pkg/util/errors"
-	openstackutil "k8s.io/cloud-provider-openstack/pkg/util/openstack"
+	v1service "github.com/os-pc/cloud-provider-rackspace/pkg/api/v1/service"
+	cpoutil "github.com/os-pc/cloud-provider-rackspace/pkg/util"
+	cpoerrors "github.com/os-pc/cloud-provider-rackspace/pkg/util/errors"
+	openstackutil "github.com/os-pc/cloud-provider-rackspace/pkg/util/openstack"
 )
 
 // Note: when creating a new Loadbalancer (VM), it can take some time before it is ready for use,

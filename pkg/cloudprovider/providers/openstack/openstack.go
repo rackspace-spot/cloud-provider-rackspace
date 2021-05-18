@@ -48,14 +48,14 @@ import (
 	"github.com/spf13/pflag"
 	gcfg "gopkg.in/gcfg.v1"
 
+	v1helper "github.com/os-pc/cloud-provider-rackspace/pkg/apis/core/v1/helper"
+	"github.com/os-pc/cloud-provider-rackspace/pkg/util/metadata"
+	"github.com/os-pc/cloud-provider-rackspace/pkg/version"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	netutil "k8s.io/apimachinery/pkg/util/net"
 	certutil "k8s.io/client-go/util/cert"
 	cloudprovider "k8s.io/cloud-provider"
-	v1helper "k8s.io/cloud-provider-openstack/pkg/apis/core/v1/helper"
-	"k8s.io/cloud-provider-openstack/pkg/util/metadata"
-	"k8s.io/cloud-provider-openstack/pkg/version"
 	"k8s.io/klog"
 )
 

@@ -5,7 +5,7 @@ VERSION     ?= $(shell git describe --exact-match 2> /dev/null || \
                git describe --match=$(git rev-parse --short=8 HEAD) --always --dirty --abbrev=8)
 
 TARGET      := rackspace-cloud-controller-manager
-LDFLAGS     := "-w -s -X 'k8s.io/cloud-provider-openstack/pkg/version.Version=${VERSION}'"
+LDFLAGS     := "-w -s -X 'github.com/os-pc/cloud-provider-rackspace/pkg/version.Version=${VERSION}'"
 
 default: build
 

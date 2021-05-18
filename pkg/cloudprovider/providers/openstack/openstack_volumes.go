@@ -26,13 +26,13 @@ import (
 	"strings"
 	"time"
 
+	k8s_volume "github.com/os-pc/cloud-provider-rackspace/pkg/volume"
+	volumeutil "github.com/os-pc/cloud-provider-rackspace/pkg/volume/util"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	cloudprovider "k8s.io/cloud-provider"
-	k8s_volume "k8s.io/cloud-provider-openstack/pkg/volume"
-	volumeutil "k8s.io/cloud-provider-openstack/pkg/volume/util"
 
 	"github.com/gophercloud/gophercloud"
 	volumeexpand "github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/volumeactions"
@@ -41,7 +41,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/volumeattach"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"k8s.io/cloud-provider-openstack/pkg/util/metadata"
+	"github.com/os-pc/cloud-provider-rackspace/pkg/util/metadata"
 	"k8s.io/klog"
 )
 
