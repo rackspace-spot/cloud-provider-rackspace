@@ -29,12 +29,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/os-pc/cloud-provider-rackspace/pkg/cloudprovider/providers/openstack"
+	"github.com/os-pc/cloud-provider-rackspace/pkg/version"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apiserver/pkg/server/healthz"
 	cloudprovider "k8s.io/cloud-provider"
-	"k8s.io/cloud-provider-openstack/pkg/cloudprovider/providers/openstack"
-	"k8s.io/cloud-provider-openstack/pkg/version"
 	"k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 	_ "k8s.io/component-base/metrics/prometheus/restclient" // for client metric registration

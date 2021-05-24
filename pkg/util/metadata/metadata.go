@@ -29,7 +29,7 @@ import (
 
 	"k8s.io/klog"
 
-	"k8s.io/cloud-provider-openstack/pkg/util/mount"
+	"github.com/os-pc/cloud-provider-rackspace/pkg/util/mount"
 	"k8s.io/utils/exec"
 )
 

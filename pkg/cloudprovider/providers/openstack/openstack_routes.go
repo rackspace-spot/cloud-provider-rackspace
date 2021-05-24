@@ -61,12 +61,7 @@ func (r *Routes) ListRoutes(ctx context.Context, clusterName string) ([]*cloudpr
 
 	nodeNamesByAddr := make(map[string]types.NodeName)
 	err := foreachServer(r.compute, servers.ListOpts{}, func(srv *servers.Server) (bool, error) {
-		interfaces, err := getAttachedInterfacesByID(r.compute, srv.ID)
-		if err != nil {
-			return false, err
-		}
-
-		addrs, err := nodeAddresses(srv, interfaces, r.networkingOpts)
+		addrs, err := nodeAddresses(srv, r.networkingOpts)
 		if err != nil {
 			return false, err
 		}

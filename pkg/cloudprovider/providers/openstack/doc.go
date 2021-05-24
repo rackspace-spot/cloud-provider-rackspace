@@ -14,4 +14,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package openstack // import "k8s.io/cloud-provider-openstack/pkg/cloudprovider/providers/openstack"
+package openstack // import "github.com/os-pc/cloud-provider-rackspace/pkg/cloudprovider/providers/openstack"

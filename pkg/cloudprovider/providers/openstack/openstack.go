@@ -1,5 +1,6 @@
 /*
 Copyright 2014 The Kubernetes Authors.
+Copyright 2021 Rackspace US, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -39,8 +40,6 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/attachinterfaces"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/availabilityzones"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
-	"github.com/gophercloud/gophercloud/openstack/identity/v3/extensions/trusts"
-	tokens3 "github.com/gophercloud/gophercloud/openstack/identity/v3/tokens"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/gophercloud/utils/client"
 	"github.com/gophercloud/utils/openstack/clientconfig"
@@ -48,14 +47,14 @@ import (
 	"github.com/spf13/pflag"
 	gcfg "gopkg.in/gcfg.v1"
 
+	v1helper "github.com/os-pc/cloud-provider-rackspace/pkg/apis/core/v1/helper"
+	"github.com/os-pc/cloud-provider-rackspace/pkg/util/metadata"
+	"github.com/os-pc/cloud-provider-rackspace/pkg/version"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	netutil "k8s.io/apimachinery/pkg/util/net"
 	certutil "k8s.io/client-go/util/cert"
 	cloudprovider "k8s.io/cloud-provider"
-	v1helper "k8s.io/cloud-provider-openstack/pkg/apis/core/v1/helper"
-	"k8s.io/cloud-provider-openstack/pkg/util/metadata"
-	"k8s.io/cloud-provider-openstack/pkg/version"
 	"k8s.io/klog"
 )
 
@@ -113,32 +112,14 @@ type LoadBalancer struct {
 	opts    LoadBalancerOpts
 }
 
-// LoadBalancerOpts have the options to talk to Neutron LBaaSV2 or Octavia
+// LoadBalancerOpts have the options to talk to Rackspace Cloud LoadBalancers
 type LoadBalancerOpts struct {
-	LBVersion            string              `gcfg:"lb-version"`          // overrides autodetection. Only support v2.
-	UseOctavia           bool                `gcfg:"use-octavia"`         // uses Octavia V2 service catalog endpoint
-	SubnetID             string              `gcfg:"subnet-id"`           // overrides autodetection.
-	NetworkID            string              `gcfg:"network-id"`          // If specified, will create virtual ip from a subnet in network which has available IP addresses
-	FloatingNetworkID    string              `gcfg:"floating-network-id"` // If specified, will create floating ip for loadbalancer, or do not create floating ip.
-	FloatingSubnetID     string              `gcfg:"floating-subnet-id"`  // If specified, will create floating ip for loadbalancer in this particular floating pool subnetwork.
-	LBClasses            map[string]*LBClass // Predefined named Floating networks and subnets
-	LBMethod             string              `gcfg:"lb-method"` // default to ROUND_ROBIN.
-	LBProvider           string              `gcfg:"lb-provider"`
-	CreateMonitor        bool                `gcfg:"create-monitor"`
-	MonitorDelay         MyDuration          `gcfg:"monitor-delay"`
-	MonitorTimeout       MyDuration          `gcfg:"monitor-timeout"`
-	MonitorMaxRetries    uint                `gcfg:"monitor-max-retries"`
-	ManageSecurityGroups bool                `gcfg:"manage-security-groups"`
-	NodeSecurityGroupIDs []string            // Do not specify, get it automatically when enable manage-security-groups. TODO(FengyunPan): move it into cache
-	InternalLB           bool                `gcfg:"internal-lb"` // default false
-}
-
-// LBClass defines the corresponding floating network, floating subnet or internal subnet ID
-type LBClass struct {
-	FloatingNetworkID string `gcfg:"floating-network-id,omitempty"`
-	FloatingSubnetID  string `gcfg:"floating-subnet-id,omitempty"`
-	SubnetID          string `gcfg:"subnet-id,omitempty"`
-	NetworkID         string `gcfg:"network-id,omitempty"`
+	LBMethod          string     `gcfg:"lb-method"` // default to ROUND_ROBIN.
+	CreateMonitor     bool       `gcfg:"create-monitor"`
+	MonitorDelay      MyDuration `gcfg:"monitor-delay"`
+	MonitorTimeout    MyDuration `gcfg:"monitor-timeout"`
+	MonitorMaxRetries uint       `gcfg:"monitor-max-retries"`
+	InternalLB        bool       `gcfg:"internal-lb"` // default false
 }
 
 // BlockStorageOpts is used to talk to Cinder service
@@ -219,13 +200,12 @@ type AuthOpts struct {
 
 // Config is used to read and store information from the cloud configuration file
 type Config struct {
-	Global            AuthOpts
-	LoadBalancer      LoadBalancerOpts
-	LoadBalancerClass map[string]*LBClass
-	BlockStorage      BlockStorageOpts
-	Route             RouterOpts
-	Metadata          MetadataOpts
-	Networking        NetworkingOpts
+	Global       AuthOpts
+	LoadBalancer LoadBalancerOpts
+	BlockStorage BlockStorageOpts
+	Route        RouterOpts
+	Metadata     MetadataOpts
+	Networking   NetworkingOpts
 }
 
 func LogCfg(cfg Config) {
@@ -333,32 +313,6 @@ func (cfg AuthOpts) ToAuthOptions() gophercloud.AuthOptions {
 	return *ao
 }
 
-func (cfg AuthOpts) ToAuth3Options() tokens3.AuthOptions {
-	ao := cfg.ToAuthOptions()
-
-	var scope tokens3.Scope
-	if ao.Scope != nil {
-		scope.ProjectID = ao.Scope.ProjectID
-		scope.ProjectName = ao.Scope.ProjectName
-		scope.DomainID = ao.Scope.DomainID
-		scope.DomainName = ao.Scope.DomainName
-	}
-
-	return tokens3.AuthOptions{
-		IdentityEndpoint:            ao.IdentityEndpoint,
-		UserID:                      ao.UserID,
-		Username:                    ao.Username,
-		Password:                    ao.Password,
-		DomainID:                    ao.DomainID,
-		DomainName:                  ao.DomainName,
-		ApplicationCredentialID:     ao.ApplicationCredentialID,
-		ApplicationCredentialName:   ao.ApplicationCredentialName,
-		ApplicationCredentialSecret: ao.ApplicationCredentialSecret,
-		Scope:                       scope,
-		AllowReauth:                 ao.AllowReauth,
-	}
-}
-
 // ReadConfig reads values from the cloud.conf
 func ReadConfig(config io.Reader) (Config, error) {
 	if config == nil {
@@ -367,12 +321,9 @@ func ReadConfig(config io.Reader) (Config, error) {
 	var cfg Config
 
 	// Set default values explicitly
-	cfg.LoadBalancer.UseOctavia = true
 	cfg.LoadBalancer.InternalLB = false
-	cfg.LoadBalancer.LBProvider = "amphora"
 	cfg.LoadBalancer.LBMethod = "ROUND_ROBIN"
 	cfg.LoadBalancer.CreateMonitor = false
-	cfg.LoadBalancer.ManageSecurityGroups = false
 	cfg.LoadBalancer.MonitorDelay = MyDuration{5 * time.Second}
 	cfg.LoadBalancer.MonitorTimeout = MyDuration{3 * time.Second}
 	cfg.LoadBalancer.MonitorMaxRetries = 1
@@ -527,23 +478,6 @@ func NewOpenStackClient(cfg *AuthOpts, userAgent string, extraUserAgent ...strin
 		}
 	}
 
-	if cfg.TrustID != "" {
-		opts := cfg.ToAuth3Options()
-
-		// support for the legacy manila auth
-		// if TrusteeID and TrusteePassword were defined, then use them
-		opts.UserID = replaceEmpty(cfg.TrusteeID, opts.UserID)
-		opts.Password = replaceEmpty(cfg.TrusteePassword, opts.Password)
-
-		authOptsExt := trusts.AuthOptsExt{
-			TrustID:            cfg.TrustID,
-			AuthOptionsBuilder: &opts,
-		}
-		err = openstack.AuthenticateV3(provider, authOptsExt, gophercloud.EndpointOpts{})
-
-		return provider, err
-	}
-
 	opts := cfg.ToAuthOptions()
 	err = openstack.Authenticate(provider, opts)
 
@@ -571,10 +505,6 @@ func NewOpenStack(cfg Config) (*OpenStack, error) {
 		metadataOpts:   cfg.Metadata,
 		networkingOpts: cfg.Networking,
 	}
-
-	// ini file doesn't support maps so we are reusing top level sub sections
-	// and copy the resulting map to corresponding loadbalancer section
-	os.lbOpts.LBClasses = cfg.LoadBalancerClass
 
 	err = checkOpenStackOpts(&os)
 	if err != nil {
@@ -673,25 +603,8 @@ func getServerByName(client *gophercloud.ServiceClient, name types.NodeName) (*S
 // * access IPs
 // * metadata hostname
 // * server object Addresses (floating type)
-func nodeAddresses(srv *servers.Server, interfaces []attachinterfaces.Interface, networkingOpts NetworkingOpts) ([]v1.NodeAddress, error) {
+func nodeAddresses(srv *servers.Server, networkingOpts NetworkingOpts) ([]v1.NodeAddress, error) {
 	addrs := []v1.NodeAddress{}
-
-	// parse private IP addresses first in an ordered manner
-	for _, iface := range interfaces {
-		for _, fixedIP := range iface.FixedIPs {
-			if iface.PortState == "ACTIVE" {
-				isIPv6 := net.ParseIP(fixedIP.IPAddress).To4() == nil
-				if !(isIPv6 && networkingOpts.IPv6SupportDisabled) {
-					v1helper.AddToNodeAddresses(&addrs,
-						v1.NodeAddress{
-							Type:    v1.NodeInternalIP,
-							Address: fixedIP.IPAddress,
-						},
-					)
-				}
-			}
-		}
-	}
 
 	// process public IP addresses
 	if srv.AccessIPv4 != "" {
@@ -723,8 +636,7 @@ func nodeAddresses(srv *servers.Server, interfaces []attachinterfaces.Interface,
 
 	// process the rest
 	type Address struct {
-		IPType string `mapstructure:"OS-EXT-IPS:type"`
-		Addr   string
+		Addr string
 	}
 
 	var addresses map[string][]Address
@@ -742,15 +654,13 @@ func nodeAddresses(srv *servers.Server, interfaces []attachinterfaces.Interface,
 	for _, network := range networks {
 		for _, props := range addresses[network] {
 			var addressType v1.NodeAddressType
-			if props.IPType == "floating" || network == networkingOpts.PublicNetworkName {
+			if network == networkingOpts.PublicNetworkName {
 				addressType = v1.NodeExternalIP
+			} else if network == networkingOpts.InternalNetworkName {
+				addressType = v1.NodeInternalIP
 			} else {
-				if networkingOpts.InternalNetworkName == "" || network == networkingOpts.InternalNetworkName {
-					addressType = v1.NodeInternalIP
-				} else {
-					klog.V(5).Infof("Node '%s' address '%s' ignored due to 'internal-network-name' option", srv.Name, props.Addr)
-					continue
-				}
+				klog.V(5).Infof("Node '%s' address '%s' ignored due to 'internal-network-name' option", srv.Name, props.Addr)
+				continue
 			}
 
 			isIPv6 := net.ParseIP(props.Addr).To4() == nil
@@ -774,12 +684,7 @@ func getAddressesByName(client *gophercloud.ServiceClient, name types.NodeName, 
 		return nil, err
 	}
 
-	interfaces, err := getAttachedInterfacesByID(client, srv.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	return nodeAddresses(&srv.Server, interfaces, networkingOpts)
+	return nodeAddresses(&srv.Server, networkingOpts)
 }
 
 func getAddressByName(client *gophercloud.ServiceClient, name types.NodeName, needIPv6 bool, networkingOpts NetworkingOpts) (string, error) {
@@ -851,7 +756,7 @@ func (os *OpenStack) HasClusterID() bool {
 	return true
 }
 
-// LoadBalancer initializes a LbaasV2 object
+// LoadBalancer initializes a CloudLb object
 func (os *OpenStack) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
 	klog.V(4).Info("openstack.LoadBalancer() called")
 
@@ -870,22 +775,14 @@ func (os *OpenStack) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
 		return nil, false
 	}
 
-	lb, err := os.NewLoadBalancerV2()
+	lb, err := os.NewCloudLoadBalancer()
 	if err != nil {
-		return nil, false
-	}
-
-	// LBaaS v1 is deprecated in the OpenStack Liberty release.
-	// Currently kubernetes OpenStack cloud provider just support LBaaS v2.
-	lbVersion := os.lbOpts.LBVersion
-	if lbVersion != "" && lbVersion != "v2" {
-		klog.Warningf("Config error: currently only support LBaaS v2, unrecognised lb-version \"%v\"", lbVersion)
 		return nil, false
 	}
 
 	klog.V(1).Info("Claiming to support LoadBalancer")
 
-	return &LbaasV2{LoadBalancer{network, compute, lb, os.lbOpts}}, true
+	return &CloudLb{LoadBalancer{network, compute, lb, os.lbOpts}}, true
 }
 
 // Zones indicates that we support zones

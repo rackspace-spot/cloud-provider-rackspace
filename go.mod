@@ -1,4 +1,4 @@
-module k8s.io/cloud-provider-openstack
+module github.com/os-pc/cloud-provider-rackspace
 
 go 1.13
 
@@ -11,6 +11,7 @@ require (
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/onsi/ginkgo v1.12.0
 	github.com/onsi/gomega v1.9.0
+	github.com/os-pc/gocloudlb v0.0.0-20210518234701-90577a315448 // indirect
 	github.com/pborman/uuid v1.2.0
 	github.com/prometheus/client_golang v1.4.1
 	github.com/sirupsen/logrus v1.4.2

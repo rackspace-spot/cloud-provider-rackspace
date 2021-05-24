@@ -1,5 +1,6 @@
 /*
 Copyright 2017 The Kubernetes Authors.
+Copyright 2021 Rackspace US, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,6 +22,8 @@ import (
 
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
+
+	"github.com/os-pc/gocloudlb"
 )
 
 // NewNetworkV2 creates a ServiceClient that may be used with the neutron v2 API
@@ -78,21 +81,15 @@ func (os *OpenStack) NewBlockStorageV3() (*gophercloud.ServiceClient, error) {
 	return storage, nil
 }
 
-// NewLoadBalancerV2 creates a ServiceClient that may be used with the Neutron LBaaS v2 API
-func (os *OpenStack) NewLoadBalancerV2() (*gophercloud.ServiceClient, error) {
-	var lb *gophercloud.ServiceClient
-	var err error
-	if os.lbOpts.UseOctavia {
-		lb, err = openstack.NewLoadBalancerV2(os.provider, gophercloud.EndpointOpts{
-			Region: os.region,
-		})
-	} else {
-		lb, err = openstack.NewNetworkV2(os.provider, gophercloud.EndpointOpts{
-			Region: os.region,
-		})
-	}
+// NewCloudLoadBalancer creates a ServiceClient that may be used with the Rackspace
+// Cloud Load Balancer v1.0 API
+func (os *OpenStack) NewCloudLoadBalancer() (*gophercloud.ServiceClient, error) {
+	lb, err := gocloudlb.NewLB(os.provider, gophercloud.EndpointOpts{
+		Region: os.region,
+	})
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to find load-balancer v2 endpoint for region %s: %v", os.region, err)
+		return nil, fmt.Errorf("failed to find rax:load-balancer endpoint for region %s: %v", os.region, err)
 	}
 	return lb, nil
 }
