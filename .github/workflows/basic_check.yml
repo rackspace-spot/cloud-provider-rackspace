@@ -1,4 +1,4 @@
-name: code checks
+name: basic check
 on:
   push:
     branches:
@@ -14,6 +14,9 @@ jobs:
       - uses: actions/setup-go@v2
         with:
           go-version: 1.16.3
-      - name: Run make fmtcheck
+      - name: Check code formatting
         run: |
           make fmtcheck
+      - name: Build controller
+        run: |
+          make
