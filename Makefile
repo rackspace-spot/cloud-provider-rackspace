@@ -21,7 +21,7 @@ test: fmtcheck
 	go test $(TEST)
 
 build: fmtcheck
-	GCO_ENABLED=0 go build \
+	GCO_ENABLED=0 GOOS=linux go build \
 		-ldflags $(LDFLAGS) \
 		-o $(TARGET) \
 		cmd/openstack-cloud-controller-manager/main.go
