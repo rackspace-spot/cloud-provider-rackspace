@@ -13,4 +13,6 @@
 FROM --platform=$TARGETPLATFORM alpine:3.13
 
 RUN apk add --no-cache ca-certificates
-ADD rackspace-cloud-controller-manager /bin/rackspace-cloud-controller-manager
+ADD rackspace-cloud-controller-manager /bin/cloud-controller-manager
+
+ENTRYPOINT ["/bin/cloud-controller-manager"]
