@@ -2,13 +2,28 @@
 
 This repository holds plugins related to Kubernetes and Rackspace OpenStack Public Cloud integration.
 
-## Usage
+## Deploying
 
 The controller is available as a Docker container at:
 - docker.io/ospc/rackspace-cloud-controller-manager
-- docker.pkg.github.com/os-pc/cloud-provider-rackspace/rackspace-cloud-controller-manager
 
-// more to come
+### Steps
+
+- Create a secret containing Rackspace authentication and configuration for your account.  You can find an example config file in [`manifests/cloud-config`](/manifests/cloud-config).
+
+    ```shell
+    kubectl create secret -n kube-system generic rackspace-cloud-config --from-file=cloud-config
+    ```
+
+- Create RBAC resources and rackspace-cloud-controller-manager deamonset.
+
+    ```shell
+    kubectl apply -f https://raw.githubusercontent.com/os-pc/cloud-provider-rackspace/master/manifests/cloud-controller-manager-roles.yaml
+    kubectl apply -f https://raw.githubusercontent.com/os-pc/cloud-provider-rackspace/master/manifests/cloud-controller-manager-role-bindings.yaml
+    kubectl apply -f https://raw.githubusercontent.com/os-pc/cloud-provider-rackspace/master/manifests/rackspace-cloud-controller-manager-ds.yaml
+    ```
+
+- Waiting for all the pods in kube-system namespace up and running.
 
 # Versioning
 
