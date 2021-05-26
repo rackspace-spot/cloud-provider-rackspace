@@ -1,0 +1,15 @@
+[Global]
+auth-url=https://identity.api.rackspacecloud.com/v2.0/
+username=<rackspace-username>
+password=<rackspace-password>
+region=<rackspace-region>
+tenant-id=<rackspace-tenant-id-or-project-id>
+
+[LoadBalancer]
+
+[BlockStorage]
+bs-version=v2
+
+[Networking]
+internal-network-name=private
+public-network-name=public
