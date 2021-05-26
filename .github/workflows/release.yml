@@ -35,10 +35,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: ospc/rackspace-cloud-controller-manager:${{ steps.docker-tag.outputs.tag }}
-      - name: Push to GitHub Release
-        uses: docker/build-push-action@v2
-        with:
-          context: .
-          push: true
-          tags: docker.pkg.github.com/${{ github.repository }}/rackspace-cloud-controller-manager:${{ steps.docker-tag.outputs.tag }}
+          tags: |
+            ospc/rackspace-cloud-controller-manager:${{ steps.docker-tag.outputs.tag }}
+            docker.pkg.github.com/${{ github.repository }}/rackspace-cloud-controller-manager:${{ steps.docker-tag.outputs.tag }}

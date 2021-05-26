@@ -13,6 +13,9 @@
 FROM --platform=$TARGETPLATFORM alpine:3.13
 
 RUN apk add --no-cache ca-certificates
+# if we build on a Linux box it will use glibc ld.so but its still built
+# statically and will work against musl so.. hand wave.
+RUN mkdir -p /lib64 && ln -s /lib/ld-musl-x86_64.so.1 /lib64/ld-linux-x86-64.so.2
 ADD rackspace-cloud-controller-manager /bin/cloud-controller-manager
 
 ENTRYPOINT ["/bin/cloud-controller-manager"]
