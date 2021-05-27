@@ -244,9 +244,19 @@ func (lbaas *CloudLb) createLoadBalancer(service *corev1.Service, name string, c
 
 // GetLoadBalancer returns whether the specified load balancer exists and its status
 func (lbaas *CloudLb) GetLoadBalancer(ctx context.Context, clusterName string, service *corev1.Service) (*corev1.LoadBalancerStatus, bool, error) {
+	// no ports, why are we here?
+	if len(service.Spec.Ports) == 0 {
+		return nil, false, nil
+	}
+
 	name := lbaas.GetLoadBalancerName(ctx, clusterName, service)
-	loadbalancer, err := openstackutil.GetLoadbalancerByName(lbaas.lb, name)
-	if err == ErrNotFound {
+	lbs, err := openstackutil.GetLoadBalancersByName(lbaas.lb, name)
+	if err != nil {
+		return nil, false, err
+	}
+
+	loadbalancer, err := openstackutil.GetLoadBalancerByPort(lbs, service.Spec.Ports[0])
+	if err == openstackutil.ErrNotFound {
 		return nil, false, nil
 	}
 	if loadbalancer == nil {
@@ -475,12 +485,13 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 	*/
 
 	name := lbaas.GetLoadBalancerName(ctx, clusterName, apiService)
-	loadbalancer, err := openstackutil.GetLoadbalancerByName(lbaas.lb, name)
+	lbs, err := openstackutil.GetLoadBalancersByName(lbaas.lb, name)
 	if err != nil {
-		if err != ErrNotFound {
-			return nil, fmt.Errorf("error getting loadbalancer for Service %s: %v", serviceName, err)
-		}
+		return nil, fmt.Errorf("error getting loadbalancers for Service %s: %v", serviceName, err)
+	}
 
+	loadbalancer, err := openstackutil.GetLoadBalancerByPort(lbs, port)
+	if err == openstackutil.ErrNotFound {
 		klog.V(2).Infof("Creating loadbalancer %s", name)
 
 		loadbalancer, err = lbaas.createLoadBalancer(apiService, name, clusterName, internalAnnotation, port)
@@ -560,10 +571,12 @@ func (lbaas *CloudLb) UpdateLoadBalancer(ctx context.Context, clusterName string
 	}
 
 	name := lbaas.GetLoadBalancerName(ctx, clusterName, service)
-	loadbalancer, err := openstackutil.GetLoadbalancerByName(lbaas.lb, name)
+	lbs, err := openstackutil.GetLoadBalancersByName(lbaas.lb, name)
 	if err != nil {
 		return err
 	}
+
+	loadbalancer, err := openstackutil.GetLoadBalancerByPort(lbs, ports[0])
 	if loadbalancer == nil {
 		return fmt.Errorf("loadbalancer does not exist for Service %s", serviceName)
 	}
@@ -590,13 +603,16 @@ func (lbaas *CloudLb) EnsureLoadBalancerDeleted(ctx context.Context, clusterName
 	klog.V(4).Infof("EnsureLoadBalancerDeleted(%s, %s)", clusterName, serviceName)
 
 	name := lbaas.GetLoadBalancerName(ctx, clusterName, service)
-	loadbalancer, err := openstackutil.GetLoadbalancerByName(lbaas.lb, name)
-	if err != nil && err != ErrNotFound {
+	lbs, err := openstackutil.GetLoadBalancersByName(lbaas.lb, name)
+	if err != nil {
 		return err
 	}
-	if loadbalancer == nil {
+
+	if len(lbs) == 0 {
 		return nil
 	}
+
+	loadbalancer := lbs[0]
 
 	// delete loadbalancer
 	err = loadbalancers.Delete(lbaas.lb, loadbalancer.ID).ExtractErr()

@@ -28,6 +28,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/loadbalancer/v2/pools"
 	"github.com/gophercloud/gophercloud/pagination"
 	version "github.com/hashicorp/go-version"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog"
 
@@ -166,30 +167,17 @@ func CreateListener(client *gophercloud.ServiceClient, lbID uint64, opts listene
 	return listener, nil
 }
 
-func getLoadBalancers(client *gophercloud.ServiceClient, opts loadbalancers.ListOpts) ([]loadbalancers.LoadBalancer, error) {
-	allPages, err := loadbalancers.List(client, opts).AllPages()
+// GetLoadbalancerByName get the load balancer which is in valid status by the given name.
+func GetLoadBalancersByName(client *gophercloud.ServiceClient, name string) ([]loadbalancers.LoadBalancer, error) {
+	var validLBs []loadbalancers.LoadBalancer
+
+	allPages, err := loadbalancers.List(client, loadbalancers.ListOpts{}).AllPages()
 	if err != nil {
 		return nil, err
 	}
 	allLoadbalancers, err := loadbalancers.ExtractLoadBalancers(allPages)
 	if err != nil {
 		return nil, err
-	}
-
-	return allLoadbalancers, nil
-}
-
-// GetLoadbalancerByName get the load balancer which is in valid status by the given name.
-func GetLoadbalancerByName(client *gophercloud.ServiceClient, name string) (*loadbalancers.LoadBalancer, error) {
-	var validLBs []loadbalancers.LoadBalancer
-
-	allLoadbalancers, err := getLoadBalancers(client, loadbalancers.ListOpts{})
-	if err != nil {
-		return nil, err
-	}
-
-	if len(allLoadbalancers) == 0 {
-		return nil, ErrNotFound
 	}
 
 	for _, lb := range allLoadbalancers {
@@ -199,14 +187,18 @@ func GetLoadbalancerByName(client *gophercloud.ServiceClient, name string) (*loa
 		}
 	}
 
-	if len(validLBs) > 1 {
-		return nil, ErrMultipleResults
-	}
-	if len(validLBs) == 0 {
-		return nil, ErrNotFound
+	return validLBs, nil
+}
+
+// GetLoadBalancerByPort gets the specific load balancer from a list of load balancers
+func GetLoadBalancerByPort(lbs []loadbalancers.LoadBalancer, port corev1.ServicePort) (*loadbalancers.LoadBalancer, error) {
+	for _, lb := range lbs {
+		if lb.Port == port.Port {
+			return &lb, nil
+		}
 	}
 
-	return &validLBs[0], nil
+	return nil, ErrNotFound
 }
 
 // GetListenerByName gets a listener by its name, raise error if not found or get multiple ones.
