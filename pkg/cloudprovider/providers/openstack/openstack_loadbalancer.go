@@ -438,10 +438,14 @@ func (lbaas *CloudLb) ensureLoadBalancerNodes(lbID uint64, port corev1.ServicePo
 		}
 	}
 
-	klog.V(4).Infof("Adding nodes to load balancer %d", lbID)
-	_, createErr := lbnodes.Create(lbaas.lb, lbID, addNodes).Extract()
-	if createErr != nil {
-		return fmt.Errorf("error adding nodes to load balancer: %d, %v", lbID, createErr)
+	if len(addNodes) > 0 {
+		klog.V(4).Infof("Adding nodes to load balancer %d", lbID)
+		_, createErr := lbnodes.Create(lbaas.lb, lbID, addNodes).Extract()
+		if createErr != nil {
+			return fmt.Errorf("error adding nodes to load balancer: %d, %v", lbID, createErr)
+		}
+	} else {
+		klog.V(4).Infof("No nodes need to be added to load balancer %d", lbID)
 	}
 
 	provisioningStatus, err := waitLoadbalancerActiveStatus(lbaas.lb, lbID)
