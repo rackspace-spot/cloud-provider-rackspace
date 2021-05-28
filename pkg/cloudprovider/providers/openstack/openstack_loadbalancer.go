@@ -149,7 +149,11 @@ func waitLoadbalancerActiveStatus(client *gophercloud.ServiceClient, loadbalance
 	var provisioningStatus string
 	err := wait.ExponentialBackoff(backoff, func() (bool, error) {
 		loadbalancer, err := loadbalancers.Get(client, loadbalancerID).Extract()
-		if err != nil {
+		if err != nil && cpoerrors.IsPendingUpdate(err) {
+			klog.V(6).Infof("LoadBalancer %d: Waiting for status %s but got HTTP %v",
+				loadbalancerID, activeStatus, err)
+			return false, nil
+		} else if err != nil {
 			return false, err
 		}
 
