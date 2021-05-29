@@ -209,8 +209,9 @@ func toLBProtocol(protocol corev1.Protocol) string {
 	}
 }
 
-func (lbaas *CloudLb) createLoadBalancer(service *corev1.Service, name string, clusterName string, internalAnnotation bool, port corev1.ServicePort) (*loadbalancers.LoadBalancer, error) {
-
+func createLBCreateVips(service *corev1.Service) ([]virtualips.CreateOpts, error) {
+	//internalAnnotation, err := getBoolFromServiceAnnotation(apiService, ServiceAnnotationLoadBalancerInternal, false)
+	internalAnnotation := false
 	var lbType string
 	switch internalAnnotation {
 	case false:
@@ -219,24 +220,31 @@ func (lbaas *CloudLb) createLoadBalancer(service *corev1.Service, name string, c
 		lbType = "SERVICENET"
 	}
 
-	createOpts := loadbalancers.CreateOpts{
-		Name:     name,
-		Protocol: toLBProtocol(port.Protocol),
-		Port:     port.Port,
-		VirtualIps: []virtualips.CreateOpts{
-			{
-				Type: lbType,
-			},
-		},
-		Nodes: []lbnodes.CreateOpts{},
+	var ret []virtualips.CreateOpts
+	ret = append(ret, virtualips.CreateOpts{Type: lbType})
+
+	return ret, nil
+}
+
+func cloneLBCreateVips(lb *loadbalancers.LoadBalancer) []virtualips.CreateOpts {
+	var ret []virtualips.CreateOpts
+
+	for _, vip := range lb.VirtualIps {
+		ret = append(ret, virtualips.CreateOpts{ID: vip.ID})
 	}
 
-	//loadBalancerIP := service.Spec.LoadBalancerIP
-	/*
-		if loadBalancerIP != "" {
-			createOpts.VirtualIps = [][dBalancerIP
-		}
-	*/
+	return ret
+}
+
+func (lbaas *CloudLb) createLoadBalancer(name string, vips []virtualips.CreateOpts, port corev1.ServicePort) (*loadbalancers.LoadBalancer, error) {
+
+	createOpts := loadbalancers.CreateOpts{
+		Name:       name,
+		Protocol:   toLBProtocol(port.Protocol),
+		Port:       port.Port,
+		VirtualIps: vips,
+		Nodes:      []lbnodes.CreateOpts{},
+	}
 
 	loadbalancer, err := loadbalancers.Create(lbaas.lb, createOpts).Extract()
 
@@ -491,7 +499,6 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 		return nil, fmt.Errorf("no ports provided to openstack load balancer")
 	}
 
-	internalAnnotation := false
 	var err error
 
 	// Check for TCP protocol on each port
@@ -532,15 +539,41 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 		return nil, fmt.Errorf("error getting loadbalancers for Service %s: %v", serviceName, err)
 	}
 
+	// if we already have one load balancer for this service, we need to copy its
+	// settings to ensure we share IPs for the other ports in the service
+	var vips []virtualips.CreateOpts
+	if len(lbs) > 0 {
+		vips = cloneLBCreateVips(&lbs[0])
+		var vipIds = make(map[int]uint64)
+		for i, vip := range vips {
+			vipIds[i] = vip.ID
+		}
+		klog.V(2).Infof("Using existing VIPs %v for Service %s", vipIds, serviceName)
+	} else {
+		klog.V(2).Infof("No VIPs for Service %s yet, creating new VIP", serviceName)
+		vips, err = createLBCreateVips(apiService)
+		if err != nil {
+			return nil, fmt.Errorf("error defining virtual IPs for Service %s: %v", serviceName, err)
+		}
+	}
+
 	for _, port := range ports {
 		loadbalancer, err := openstackutil.GetLoadBalancerByPort(lbs, port)
 		if err == openstackutil.ErrNotFound {
-			klog.V(2).Infof("Creating loadbalancer %s", name)
+			klog.V(2).Infof("Creating loadbalancer %s for port %d", name, port.Port)
 
-			loadbalancer, err = lbaas.createLoadBalancer(apiService, name, clusterName, internalAnnotation, port)
+			loadbalancer, err = lbaas.createLoadBalancer(name, vips, port)
 			if err != nil {
 				return nil, fmt.Errorf("error creating loadbalancer %s: %v", name, err)
 			}
+			// since we created our load balancer here, we need to replace vip settings
+			// for any future ones created
+			vips = cloneLBCreateVips(loadbalancer)
+			var vipIds = make(map[int]uint64)
+			for i, vip := range vips {
+				vipIds[i] = vip.ID
+			}
+			klog.V(2).Infof("Switching to existing VIPs %v for Service %s", vipIds, serviceName)
 		} else {
 			klog.V(2).Infof("LoadBalancer %s already exists", loadbalancer.Name)
 			lbs = popLB(lbs, loadbalancer)
