@@ -59,8 +59,9 @@ const (
 	loadbalancerDeleteFactor    = 1.2
 	loadbalancerDeleteSteps     = 13
 
-	activeStatus = "ACTIVE"
-	errorStatus  = "ERROR"
+	activeStatus  = "ACTIVE"
+	errorStatus   = "ERROR"
+	deletedStatus = "DELETED"
 
 	// ServiceAnnotationLoadBalancerInternal defines whether or not to create an internal loadbalancer. Default: false.
 	ServiceAnnotationLoadBalancerInternal             = "service.beta.kubernetes.io/openstack-internal-load-balancer"
@@ -183,12 +184,15 @@ func waitLoadbalancerDeleted(client *gophercloud.ServiceClient, loadbalancerID u
 		Steps:    loadbalancerDeleteSteps,
 	}
 	err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-		_, err := loadbalancers.Get(client, loadbalancerID).Extract()
+		loadbalancer, err := loadbalancers.Get(client, loadbalancerID).Extract()
 		if err != nil {
 			if cpoerrors.IsNotFound(err) {
 				return true, nil
 			}
 			return false, err
+		}
+		if loadbalancer.Status == deletedStatus {
+			return true, nil
 		}
 		return false, nil
 	})
