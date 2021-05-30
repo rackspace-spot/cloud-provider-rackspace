@@ -15,12 +15,20 @@ The controller is available as a Docker container at:
     kubectl create secret -n kube-system generic rackspace-cloud-config --from-file=cloud-config
     ```
 
-- Create RBAC resources and rackspace-cloud-controller-manager deamonset.
+- Create RBAC resources
 
     ```shell
     kubectl apply -f https://raw.githubusercontent.com/os-pc/cloud-provider-rackspace/master/manifests/cloud-controller-manager-roles.yaml
     kubectl apply -f https://raw.githubusercontent.com/os-pc/cloud-provider-rackspace/master/manifests/cloud-controller-manager-role-bindings.yaml
-    kubectl apply -f https://raw.githubusercontent.com/os-pc/cloud-provider-rackspace/master/manifests/rackspace-cloud-controller-manager-ds.yaml
+    ```
+
+- Create the rackspace-cloud-controller-manager deamonset. You will likely want to set a unique cluster name to avoid trampling load balancers of other clusters on your account.
+
+    ```shell
+    curl -o rackspace-cloud-controller-manager-ds.yaml
+    $(EDITOR) rackspace-cloud-controller-manager-ds.yaml
+    # replace "your-cluster" in --cluster-name=your-cluster with your cluster name
+    kubectl apply -f rackspace-cloud-controller-manager-ds.yaml
     ```
 
 - Waiting for all the pods in kube-system namespace up and running.

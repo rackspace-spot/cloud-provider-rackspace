@@ -40,7 +40,7 @@ spec:
           args:
             - --v=1
             - --cloud-config=$(CLOUD_CONFIG)
-            - --cloud-provider=openstack
+            - --cluster-name=your-cluster
             - --use-service-account-credentials=true
             - --address=127.0.0.1
           volumeMounts:
