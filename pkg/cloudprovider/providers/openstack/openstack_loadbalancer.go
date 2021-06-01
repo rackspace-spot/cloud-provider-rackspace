@@ -59,8 +59,9 @@ const (
 	loadbalancerDeleteFactor    = 1.2
 	loadbalancerDeleteSteps     = 13
 
-	activeStatus = "ACTIVE"
-	errorStatus  = "ERROR"
+	activeStatus  = "ACTIVE"
+	errorStatus   = "ERROR"
+	deletedStatus = "DELETED"
 
 	// ServiceAnnotationLoadBalancerInternal defines whether or not to create an internal loadbalancer. Default: false.
 	ServiceAnnotationLoadBalancerInternal             = "service.beta.kubernetes.io/openstack-internal-load-balancer"
@@ -149,7 +150,11 @@ func waitLoadbalancerActiveStatus(client *gophercloud.ServiceClient, loadbalance
 	var provisioningStatus string
 	err := wait.ExponentialBackoff(backoff, func() (bool, error) {
 		loadbalancer, err := loadbalancers.Get(client, loadbalancerID).Extract()
-		if err != nil {
+		if err != nil && cpoerrors.IsPendingUpdate(err) {
+			klog.V(6).Infof("LoadBalancer %d: Waiting for status %s but got HTTP %v",
+				loadbalancerID, activeStatus, err)
+			return false, nil
+		} else if err != nil {
 			return false, err
 		}
 
@@ -179,12 +184,15 @@ func waitLoadbalancerDeleted(client *gophercloud.ServiceClient, loadbalancerID u
 		Steps:    loadbalancerDeleteSteps,
 	}
 	err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-		_, err := loadbalancers.Get(client, loadbalancerID).Extract()
+		loadbalancer, err := loadbalancers.Get(client, loadbalancerID).Extract()
 		if err != nil {
 			if cpoerrors.IsNotFound(err) {
 				return true, nil
 			}
 			return false, err
+		}
+		if loadbalancer.Status == deletedStatus {
+			return true, nil
 		}
 		return false, nil
 	})
@@ -205,8 +213,9 @@ func toLBProtocol(protocol corev1.Protocol) string {
 	}
 }
 
-func (lbaas *CloudLb) createLoadBalancer(service *corev1.Service, name string, clusterName string, internalAnnotation bool, port corev1.ServicePort) (*loadbalancers.LoadBalancer, error) {
-
+func createLBCreateVips(service *corev1.Service) ([]virtualips.CreateOpts, error) {
+	//internalAnnotation, err := getBoolFromServiceAnnotation(apiService, ServiceAnnotationLoadBalancerInternal, false)
+	internalAnnotation := false
 	var lbType string
 	switch internalAnnotation {
 	case false:
@@ -215,24 +224,31 @@ func (lbaas *CloudLb) createLoadBalancer(service *corev1.Service, name string, c
 		lbType = "SERVICENET"
 	}
 
-	createOpts := loadbalancers.CreateOpts{
-		Name:     name,
-		Protocol: toLBProtocol(port.Protocol),
-		Port:     port.Port,
-		VirtualIps: []virtualips.CreateOpts{
-			{
-				Type: lbType,
-			},
-		},
-		Nodes: []lbnodes.CreateOpts{},
+	var ret []virtualips.CreateOpts
+	ret = append(ret, virtualips.CreateOpts{Type: lbType})
+
+	return ret, nil
+}
+
+func cloneLBCreateVips(lb *loadbalancers.LoadBalancer) []virtualips.CreateOpts {
+	var ret []virtualips.CreateOpts
+
+	for _, vip := range lb.VirtualIps {
+		ret = append(ret, virtualips.CreateOpts{ID: vip.ID})
 	}
 
-	//loadBalancerIP := service.Spec.LoadBalancerIP
-	/*
-		if loadBalancerIP != "" {
-			createOpts.VirtualIps = [][dBalancerIP
-		}
-	*/
+	return ret
+}
+
+func (lbaas *CloudLb) createLoadBalancer(name string, vips []virtualips.CreateOpts, port corev1.ServicePort) (*loadbalancers.LoadBalancer, error) {
+
+	createOpts := loadbalancers.CreateOpts{
+		Name:       name,
+		Protocol:   toLBProtocol(port.Protocol),
+		Port:       port.Port,
+		VirtualIps: vips,
+		Nodes:      []lbnodes.CreateOpts{},
+	}
 
 	loadbalancer, err := loadbalancers.Create(lbaas.lb, createOpts).Extract()
 
@@ -242,11 +258,39 @@ func (lbaas *CloudLb) createLoadBalancer(service *corev1.Service, name string, c
 	return loadbalancer, nil
 }
 
+func (lbaas *CloudLb) deleteLoadBalancers(lbs []loadbalancers.LoadBalancer) error {
+
+	for _, loadbalancer := range lbs {
+		// delete loadbalancer
+		klog.V(4).Infof("Deleting load balancer %d: ", loadbalancer.ID)
+		err := loadbalancers.Delete(lbaas.lb, loadbalancer.ID).ExtractErr()
+		if err != nil && !cpoerrors.IsNotFound(err) {
+			return err
+		}
+		err = waitLoadbalancerDeleted(lbaas.lb, loadbalancer.ID)
+		if err != nil {
+			return fmt.Errorf("failed to delete loadbalancer: %v", err)
+		}
+	}
+
+	return nil
+}
+
 // GetLoadBalancer returns whether the specified load balancer exists and its status
 func (lbaas *CloudLb) GetLoadBalancer(ctx context.Context, clusterName string, service *corev1.Service) (*corev1.LoadBalancerStatus, bool, error) {
+	// no ports, why are we here?
+	if len(service.Spec.Ports) == 0 {
+		return nil, false, nil
+	}
+
 	name := lbaas.GetLoadBalancerName(ctx, clusterName, service)
-	loadbalancer, err := openstackutil.GetLoadbalancerByName(lbaas.lb, name)
-	if err == ErrNotFound {
+	lbs, err := openstackutil.GetLoadBalancersByName(lbaas.lb, name)
+	if err != nil {
+		return nil, false, err
+	}
+
+	loadbalancer, err := openstackutil.GetLoadBalancerByPort(lbs, service.Spec.Ports[0])
+	if err == openstackutil.ErrNotFound {
 		return nil, false, nil
 	}
 	if loadbalancer == nil {
@@ -275,6 +319,22 @@ func cutString(original string) string {
 		ret = original[:128]
 	}
 	return ret
+}
+
+// remove a matching item from the supplied list
+func popLB(lbs []loadbalancers.LoadBalancer, rm *loadbalancers.LoadBalancer) []loadbalancers.LoadBalancer {
+	// find the load balancer in the list
+	for i, lb := range lbs {
+		if lb.ID == rm.ID {
+			// put the one on the end over the top of this one
+			lbs[i] = lbs[len(lbs)-1]
+			// shrink the slice
+			lbs = lbs[:len(lbs)-1]
+			break
+		}
+	}
+
+	return lbs
 }
 
 // The LB needs to be configured with instance addresses on the same
@@ -390,10 +450,14 @@ func (lbaas *CloudLb) ensureLoadBalancerNodes(lbID uint64, port corev1.ServicePo
 		}
 	}
 
-	klog.V(4).Infof("Adding nodes to load balancer %d", lbID)
-	_, createErr := lbnodes.Create(lbaas.lb, lbID, addNodes).Extract()
-	if createErr != nil {
-		return fmt.Errorf("error adding nodes to load balancer: %d, %v", lbID, createErr)
+	if len(addNodes) > 0 {
+		klog.V(4).Infof("Adding nodes to load balancer %d", lbID)
+		_, createErr := lbnodes.Create(lbaas.lb, lbID, addNodes).Extract()
+		if createErr != nil {
+			return fmt.Errorf("error adding nodes to load balancer: %d, %v", lbID, createErr)
+		}
+	} else {
+		klog.V(4).Infof("No nodes need to be added to load balancer %d", lbID)
 	}
 
 	provisioningStatus, err := waitLoadbalancerActiveStatus(lbaas.lb, lbID)
@@ -437,11 +501,8 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 	ports := apiService.Spec.Ports
 	if len(ports) == 0 {
 		return nil, fmt.Errorf("no ports provided to openstack load balancer")
-	} else if len(ports) > 1 {
-		return nil, fmt.Errorf("cannot add more than one port per load balancer")
 	}
 
-	internalAnnotation := false
 	var err error
 
 	// Check for TCP protocol on each port
@@ -450,7 +511,6 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 			return nil, fmt.Errorf("only TCP LoadBalancer is supported for openstack load balancers")
 		}
 	}
-	port := ports[0]
 
 	//var listenerAllowedCIDRs []string
 	sourceRanges, err := v1service.GetLoadBalancerSourceRanges(apiService)
@@ -474,34 +534,74 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 	}
 	*/
 
+	// return status
+	status := &corev1.LoadBalancerStatus{}
+
 	name := lbaas.GetLoadBalancerName(ctx, clusterName, apiService)
-	loadbalancer, err := openstackutil.GetLoadbalancerByName(lbaas.lb, name)
+	lbs, err := openstackutil.GetLoadBalancersByName(lbaas.lb, name)
 	if err != nil {
-		if err != ErrNotFound {
-			return nil, fmt.Errorf("error getting loadbalancer for Service %s: %v", serviceName, err)
-		}
+		return nil, fmt.Errorf("error getting loadbalancers for Service %s: %v", serviceName, err)
+	}
 
-		klog.V(2).Infof("Creating loadbalancer %s", name)
-
-		loadbalancer, err = lbaas.createLoadBalancer(apiService, name, clusterName, internalAnnotation, port)
-		if err != nil {
-			return nil, fmt.Errorf("error creating loadbalancer %s: %v", name, err)
+	// if we already have one load balancer for this service, we need to copy its
+	// settings to ensure we share IPs for the other ports in the service
+	var vips []virtualips.CreateOpts
+	if len(lbs) > 0 {
+		vips = cloneLBCreateVips(&lbs[0])
+		var vipIds = make(map[int]uint64)
+		for i, vip := range vips {
+			vipIds[i] = vip.ID
 		}
+		klog.V(2).Infof("Using existing VIPs %v for Service %s", vipIds, serviceName)
 	} else {
-		klog.V(2).Infof("LoadBalancer %s already exists", loadbalancer.Name)
+		klog.V(2).Infof("No VIPs for Service %s yet, creating new VIP", serviceName)
+		vips, err = createLBCreateVips(apiService)
+		if err != nil {
+			return nil, fmt.Errorf("error defining virtual IPs for Service %s: %v", serviceName, err)
+		}
 	}
 
-	provisioningStatus, err := waitLoadbalancerActiveStatus(lbaas.lb, loadbalancer.ID)
+	for _, port := range ports {
+		loadbalancer, err := openstackutil.GetLoadBalancerByPort(lbs, port)
+		if err == openstackutil.ErrNotFound {
+			klog.V(2).Infof("Creating loadbalancer %s for port %d", name, port.Port)
+
+			loadbalancer, err = lbaas.createLoadBalancer(name, vips, port)
+			if err != nil {
+				return nil, fmt.Errorf("error creating loadbalancer %s: %v", name, err)
+			}
+			// since we created our load balancer here, we need to replace vip settings
+			// for any future ones created
+			vips = cloneLBCreateVips(loadbalancer)
+			var vipIds = make(map[int]uint64)
+			for i, vip := range vips {
+				vipIds[i] = vip.ID
+			}
+			klog.V(2).Infof("Switching to existing VIPs %v for Service %s", vipIds, serviceName)
+		} else {
+			klog.V(2).Infof("LoadBalancer %s already exists", loadbalancer.Name)
+			lbs = popLB(lbs, loadbalancer)
+		}
+
+		provisioningStatus, err := waitLoadbalancerActiveStatus(lbaas.lb, loadbalancer.ID)
+		if err != nil {
+			return nil, fmt.Errorf("timeout when waiting for loadbalancer to be ACTIVE, current provisioning status %s", provisioningStatus)
+		}
+
+		ensureErr := lbaas.ensureLoadBalancerNodes(loadbalancer.ID, port, nodes)
+		if ensureErr != nil {
+			return nil, ensureErr
+		}
+		status.Ingress = []corev1.LoadBalancerIngress{{IP: loadbalancer.VirtualIps[0].Address}}
+	}
+
+	// Delete obsolete load balancers for this service
+	klog.V(2).Infof("Deleting load balancers no longer part of Service %s: ", serviceName)
+	err = lbaas.deleteLoadBalancers(lbs)
 	if err != nil {
-		return nil, fmt.Errorf("timeout when waiting for loadbalancer to be ACTIVE, current provisioning status %s", provisioningStatus)
+		return nil, err
 	}
 
-	ensureErr := lbaas.ensureLoadBalancerNodes(loadbalancer.ID, port, nodes)
-	if ensureErr != nil {
-		return nil, ensureErr
-	}
-
-	// Delete obsolete nodes for this pool
 	//for _, node := range memberNodes {
 	/* health monitoring to come later
 	monitorID := pool.MonitorID
@@ -541,9 +641,6 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 	*/
 	//}
 
-	status := &corev1.LoadBalancerStatus{}
-	status.Ingress = []corev1.LoadBalancerIngress{{IP: loadbalancer.VirtualIps[0].Address}}
-
 	return status, nil
 }
 
@@ -555,21 +652,21 @@ func (lbaas *CloudLb) UpdateLoadBalancer(ctx context.Context, clusterName string
 	ports := service.Spec.Ports
 	if len(ports) == 0 {
 		return fmt.Errorf("no ports provided to openstack load balancer")
-	} else if len(ports) > 1 {
-		return fmt.Errorf("cannot add more than one port per load balancer")
 	}
 
 	name := lbaas.GetLoadBalancerName(ctx, clusterName, service)
-	loadbalancer, err := openstackutil.GetLoadbalancerByName(lbaas.lb, name)
+	lbs, err := openstackutil.GetLoadBalancersByName(lbaas.lb, name)
 	if err != nil {
 		return err
-	}
-	if loadbalancer == nil {
-		return fmt.Errorf("loadbalancer does not exist for Service %s", serviceName)
 	}
 
 	// Check for adding/removing members associated with each port
 	for _, port := range ports {
+		loadbalancer, err := openstackutil.GetLoadBalancerByPort(lbs, port)
+		if loadbalancer == nil {
+			return fmt.Errorf("loadbalancer does not exist for Service %s", serviceName)
+		}
+
 		provisioningStatus, err := waitLoadbalancerActiveStatus(lbaas.lb, loadbalancer.ID)
 		if err != nil {
 			return fmt.Errorf("timeout when waiting for loadbalancer to be ACTIVE, current provisioning status %s", provisioningStatus)
@@ -590,23 +687,14 @@ func (lbaas *CloudLb) EnsureLoadBalancerDeleted(ctx context.Context, clusterName
 	klog.V(4).Infof("EnsureLoadBalancerDeleted(%s, %s)", clusterName, serviceName)
 
 	name := lbaas.GetLoadBalancerName(ctx, clusterName, service)
-	loadbalancer, err := openstackutil.GetLoadbalancerByName(lbaas.lb, name)
-	if err != nil && err != ErrNotFound {
+	lbs, err := openstackutil.GetLoadBalancersByName(lbaas.lb, name)
+	if err != nil {
 		return err
 	}
-	if loadbalancer == nil {
+
+	if len(lbs) == 0 {
 		return nil
 	}
 
-	// delete loadbalancer
-	err = loadbalancers.Delete(lbaas.lb, loadbalancer.ID).ExtractErr()
-	if err != nil && !cpoerrors.IsNotFound(err) {
-		return err
-	}
-	err = waitLoadbalancerDeleted(lbaas.lb, loadbalancer.ID)
-	if err != nil {
-		return fmt.Errorf("failed to delete loadbalancer: %v", err)
-	}
-
-	return nil
+	return lbaas.deleteLoadBalancers(lbs)
 }

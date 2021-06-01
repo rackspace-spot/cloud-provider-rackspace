@@ -39,3 +39,13 @@ func IsNotFound(err error) bool {
 
 	return false
 }
+
+func IsPendingUpdate(err error) bool {
+	if errCode, ok := err.(gophercloud.ErrUnexpectedResponseCode); ok {
+		if errCode.Actual == http.StatusUnprocessableEntity {
+			return true
+		}
+	}
+
+	return false
+}
