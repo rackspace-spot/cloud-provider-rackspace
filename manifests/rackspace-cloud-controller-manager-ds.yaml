@@ -38,9 +38,9 @@ spec:
         - name: rackspace-cloud-controller-manager
           image: docker.io/ospc/rackspace-cloud-controller-manager:0.0.0
           args:
-            - --v=1
+            - --v=2
             - --cloud-config=$(CLOUD_CONFIG)
-            - --cloud-provider=openstack
+            - --cluster-name=your-cluster
             - --use-service-account-credentials=true
             - --address=127.0.0.1
           volumeMounts:
