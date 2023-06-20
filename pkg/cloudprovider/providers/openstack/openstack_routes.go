@@ -104,7 +104,7 @@ func updateRoutes(network *gophercloud.ServiceClient, router *routers.Router, ne
 	origRoutes := router.Routes // shallow copy
 
 	_, err := routers.Update(network, router.ID, routers.UpdateOpts{
-		Routes: newRoutes,
+		Routes: &newRoutes,
 	}).Extract()
 	if err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func updateRoutes(network *gophercloud.ServiceClient, router *routers.Router, ne
 	unwinder := func() {
 		klog.V(4).Infof("Reverting routes change to router %v", router.ID)
 		_, err := routers.Update(network, router.ID, routers.UpdateOpts{
-			Routes: origRoutes,
+			Routes: &origRoutes,
 		}).Extract()
 		if err != nil {
 			klog.Warningf("Unable to reset routes during error unwind: %v", err)

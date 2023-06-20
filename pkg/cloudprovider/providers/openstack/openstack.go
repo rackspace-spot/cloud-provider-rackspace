@@ -170,6 +170,7 @@ type AuthOpts struct {
 	UserID           string `gcfg:"user-id" mapstructure:"user-id" name:"os-userID" value:"optional" dependsOn:"os-password"`
 	Username         string `name:"os-userName" value:"optional" dependsOn:"os-password"`
 	Password         string `name:"os-password" value:"optional" dependsOn:"os-domainID|os-domainName,os-projectID|os-projectName,os-userID|os-userName"`
+	APIKey           string `gcfg:"api-key" value:"optional" dependsOn:"auth-url,tenant-id"`
 	TenantID         string `gcfg:"tenant-id" mapstructure:"project-id" name:"os-projectID" value:"optional" dependsOn:"os-password"`
 	TenantName       string `gcfg:"tenant-name" mapstructure:"project-name" name:"os-projectName" value:"optional" dependsOn:"os-password"`
 	TrustID          string `gcfg:"trust-id" mapstructure:"trust-id" name:"os-trustID" value:"optional"`
@@ -287,6 +288,7 @@ func (cfg AuthOpts) ToAuthOptions() gophercloud.AuthOptions {
 			UserID:                      cfg.UserID,
 			Username:                    cfg.Username,
 			Password:                    cfg.Password,
+			APIKey:                      cfg.APIKey,
 			ProjectID:                   cfg.TenantID,
 			ProjectName:                 cfg.TenantName,
 			DomainID:                    cfg.DomainID,
@@ -309,7 +311,7 @@ func (cfg AuthOpts) ToAuthOptions() gophercloud.AuthOptions {
 
 	// Persistent service, so we need to be able to renew tokens.
 	ao.AllowReauth = true
-
+	fmt.Printf("ARJUN: ao = %+v\n", *ao)
 	return *ao
 }
 
@@ -329,6 +331,8 @@ func ReadConfig(config io.Reader) (Config, error) {
 	cfg.LoadBalancer.MonitorMaxRetries = 1
 
 	err := gcfg.FatalOnly(gcfg.ReadInto(&cfg, config))
+
+	fmt.Printf("ARJUNx: cfg.Global = %+v\n", cfg.Global)
 
 	klog.V(5).Infof("Config, loaded from the config file:")
 	LogCfg(cfg)
@@ -375,6 +379,7 @@ func ReadClouds(cfg *Config) error {
 	cfg.Global.UserID = replaceEmpty(cfg.Global.UserID, cloud.AuthInfo.UserID)
 	cfg.Global.Username = replaceEmpty(cfg.Global.Username, cloud.AuthInfo.Username)
 	cfg.Global.Password = replaceEmpty(cfg.Global.Password, cloud.AuthInfo.Password)
+	cfg.Global.APIKey = replaceEmpty(cfg.Global.APIKey, cloud.AuthInfo.APIKey)
 	cfg.Global.TenantID = replaceEmpty(cfg.Global.TenantID, cloud.AuthInfo.ProjectID)
 	cfg.Global.TenantName = replaceEmpty(cfg.Global.TenantName, cloud.AuthInfo.ProjectName)
 	cfg.Global.DomainID = replaceEmpty(cfg.Global.DomainID, cloud.AuthInfo.DomainID)
@@ -438,7 +443,7 @@ func NewOpenStackClient(cfg *AuthOpts, userAgent string, extraUserAgent ...strin
 	if err != nil {
 		return nil, err
 	}
-
+	fmt.Printf("ARJUN: after openstack.NewClient\n")
 	ua := gophercloud.UserAgent{}
 	ua.Prepend(fmt.Sprintf("%s/%s", userAgent, version.Version))
 	for _, data := range extraUserAgent {
@@ -477,7 +482,7 @@ func NewOpenStackClient(cfg *AuthOpts, userAgent string, extraUserAgent ...strin
 			Logger: &Logger{},
 		}
 	}
-
+	fmt.Printf("Before openstack.Authenticate\n")
 	opts := cfg.ToAuthOptions()
 	err = openstack.Authenticate(provider, opts)
 
@@ -486,8 +491,10 @@ func NewOpenStackClient(cfg *AuthOpts, userAgent string, extraUserAgent ...strin
 
 // NewOpenStack creates a new new instance of the openstack struct from a config struct
 func NewOpenStack(cfg Config) (*OpenStack, error) {
+	fmt.Printf("ARJUN: NewOpenStack: %+v\n", cfg.Global)
 	provider, err := NewOpenStackClient(&cfg.Global, "openstack-cloud-controller-manager", userAgentData...)
 	if err != nil {
+		fmt.Printf("ARJUN: err NewOpenstackClient = %+v\n", err)
 		return nil, err
 	}
 
@@ -508,6 +515,7 @@ func NewOpenStack(cfg Config) (*OpenStack, error) {
 
 	err = checkOpenStackOpts(&os)
 	if err != nil {
+		fmt.Printf("ARJUN: err2 = %+v\n", err)
 		return nil, err
 	}
 
