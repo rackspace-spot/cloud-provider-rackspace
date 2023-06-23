@@ -264,12 +264,14 @@ func (l Logger) Printf(format string, args ...interface{}) {
 
 func init() {
 	RegisterMetrics()
-
+	fmt.Printf("ARJUN: init openstack.go\n")
 	cloudprovider.RegisterCloudProvider(ProviderName, func(config io.Reader) (cloudprovider.Interface, error) {
 		cfg, err := ReadConfig(config)
 		if err != nil {
 			return nil, err
 		}
+		fmt.Printf("ARJUN: openstack.go: After ReadConfig before NewOpenstack(cfg)\n")
+		fmt.Printf("cfg.Global = %+v\n", cfg.Global)
 		cloud, err := NewOpenStack(cfg)
 		if err != nil {
 			klog.V(1).Infof("New openstack client created failed with config")
