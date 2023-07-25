@@ -170,6 +170,7 @@ type AuthOpts struct {
 	UserID           string `gcfg:"user-id" mapstructure:"user-id" name:"os-userID" value:"optional" dependsOn:"os-password"`
 	Username         string `name:"os-userName" value:"optional" dependsOn:"os-password"`
 	Password         string `name:"os-password" value:"optional" dependsOn:"os-domainID|os-domainName,os-projectID|os-projectName,os-userID|os-userName"`
+	APIKey           string `gcfg:"api-key" value:"optional" dependsOn:"auth-url,tenant-id"`
 	TenantID         string `gcfg:"tenant-id" mapstructure:"project-id" name:"os-projectID" value:"optional" dependsOn:"os-password"`
 	TenantName       string `gcfg:"tenant-name" mapstructure:"project-name" name:"os-projectName" value:"optional" dependsOn:"os-password"`
 	TrustID          string `gcfg:"trust-id" mapstructure:"trust-id" name:"os-trustID" value:"optional"`
@@ -278,6 +279,11 @@ func init() {
 }
 
 func (cfg AuthOpts) ToAuthOptions() gophercloud.AuthOptions {
+	var customCredential string = ""
+	if cfg.APIKey != "" {
+		customCredential = fmt.Sprintf(`{"RAX-KSKEY:apiKeyCredentials":{"username":"%s","apiKey":"%s"}}`,
+			cfg.Username, cfg.APIKey)
+	}
 	opts := clientconfig.ClientOpts{
 		// this is needed to disable the clientconfig.AuthOptions func env detection
 		EnvPrefix: "_",
@@ -287,6 +293,7 @@ func (cfg AuthOpts) ToAuthOptions() gophercloud.AuthOptions {
 			UserID:                      cfg.UserID,
 			Username:                    cfg.Username,
 			Password:                    cfg.Password,
+			CustomCredential:            customCredential,
 			ProjectID:                   cfg.TenantID,
 			ProjectName:                 cfg.TenantName,
 			DomainID:                    cfg.DomainID,
@@ -309,7 +316,7 @@ func (cfg AuthOpts) ToAuthOptions() gophercloud.AuthOptions {
 
 	// Persistent service, so we need to be able to renew tokens.
 	ao.AllowReauth = true
-
+	klog.Infof("AuthOptions = %+v\n", *ao)
 	return *ao
 }
 
@@ -375,6 +382,7 @@ func ReadClouds(cfg *Config) error {
 	cfg.Global.UserID = replaceEmpty(cfg.Global.UserID, cloud.AuthInfo.UserID)
 	cfg.Global.Username = replaceEmpty(cfg.Global.Username, cloud.AuthInfo.Username)
 	cfg.Global.Password = replaceEmpty(cfg.Global.Password, cloud.AuthInfo.Password)
+	//cfg.Global.APIKey = replaceEmpty(cfg.Global.APIKey, cloud.AuthInfo.APIKey)
 	cfg.Global.TenantID = replaceEmpty(cfg.Global.TenantID, cloud.AuthInfo.ProjectID)
 	cfg.Global.TenantName = replaceEmpty(cfg.Global.TenantName, cloud.AuthInfo.ProjectName)
 	cfg.Global.DomainID = replaceEmpty(cfg.Global.DomainID, cloud.AuthInfo.DomainID)
