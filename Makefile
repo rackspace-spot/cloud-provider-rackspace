@@ -6,7 +6,7 @@ VERSION     ?= $(shell git describe --exact-match 2> /dev/null || \
 
 TARGET      := rackspace-cloud-controller-manager
 LDFLAGS     := "-w -s -X 'github.com/os-pc/cloud-provider-rackspace/pkg/version.Version=${VERSION}'"
-REGISTRY    := xagent003
+REGISTRY    := rackspacengpc
 
 default: build
 
@@ -30,7 +30,6 @@ clean:
 	rm -rf $(TARGET)
 
 image: build
-	docker build -t $(REGISTRY)/$(TARGET):latest .
-
+	docker build -t $(REGISTRY)/$(TARGET):${VERSION} .
 push: image
-	docker push $(REGISTRY)/$(TARGET):latest
+	docker push $(REGISTRY)/$(TARGET):${VERSION}

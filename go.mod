@@ -122,7 +122,7 @@ require (
 )
 
 replace (
-	github.com/gophercloud/gophercloud => /home/xagent/gophercloud
-	github.com/gophercloud/utils => /home/xagent/utils
-	k8s.io/cloud-provider => /home/xagent/k8s-cloud-provider
+	github.com/gophercloud/gophercloud => ../gophercloud
+	github.com/gophercloud/utils => ../gophercloud-utils
+	k8s.io/cloud-provider => ../k8s-cloud-provider
 )
