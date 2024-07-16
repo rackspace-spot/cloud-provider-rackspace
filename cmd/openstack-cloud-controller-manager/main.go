@@ -46,6 +46,9 @@ import (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
+	// Consume --v=2, log verbosity flag
+	klog.InitFlags(nil)
+
 	ccmOptions, err := options.NewCloudControllerManagerOptions()
 	if err != nil {
 		klog.Fatalf("unable to initialize command options: %v", err)
@@ -63,6 +66,8 @@ func main() {
 	pflag.CommandLine.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
 	pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
 
+	// Parse openstack flags like --user-agent
+	pflag.Parse()
 	// utilflag.InitFlags()
 	logs.InitLogs()
 	defer logs.FlushLogs()
