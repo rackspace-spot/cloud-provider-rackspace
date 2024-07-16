@@ -1,22 +1,28 @@
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Build stage
+FROM golang:1.22.4 AS builder
 
-FROM --platform=$TARGETPLATFORM alpine:3.18.2
+WORKDIR /app
 
-RUN apk add gcompat
-RUN apk add --no-cache ca-certificates
-# if we build on a Linux box it will use glibc ld.so but its still built
-# statically and will work against musl so.. hand wave.
-#RUN mkdir -p /lib64 && ln -s /lib/ld-musl-x86_64.so.1 /lib64/ld-linux-x86-64.so.2
-ADD rackspace-cloud-controller-manager /bin/cloud-controller-manager
+# Copy the entire project directory
+COPY . .
+
+# If you have a local replacement for gophercloud, uncomment and modify the following line:
+# COPY ../gophercloud /gophercloud
+
+# Download all dependencies
+RUN go mod tidy
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -o rackspace-cloud-controller-manager \
+    cmd/openstack-cloud-controller-manager/main.go
+
+# Runtime stage
+FROM alpine:3.18.2
+
+RUN apk add --no-cache gcompat ca-certificates
+
+# Copy the pre-built binary file from the previous stage
+COPY --from=builder /app/rackspace-cloud-controller-manager /bin/cloud-controller-manager
 
 ENTRYPOINT ["/bin/cloud-controller-manager"]
