@@ -45,6 +45,19 @@ the 5th version built against Kubernetes 1.20 APIs.
 This controller is developed and tested against Rackspace OpenStack Public Cloud using Go 1.16.
 Pull requests are welcome.
 
+## How to run locally. 
+
+1. In order to test your changes you will need a kubernetes cluster. If you don't have a kubernetes cluster then create one.
+2. Obtain the kubeconfig for your kubernetes cluster. We will later use this to create a Kubernetes resource for our testing.
+5. Scale down the cloud-provider deployment for your kubernetes cluster to zero.
+6. Set following environment variables CLOUD_CONFIG, KUBECONFIG , AUTHENTICATION_KUBECONFIG, CLUSTER_NAME to appropriate values. 
+    * CLOUD_CONFIG - location where cloud.conf file is stored.
+    * KUBECONFIG , AUTHENTICATION_KUBECONFIG -  Where the kubeconfig of your VCP for your cloudspace.
+    * CLUSTER_NAME - your VCP name
+
+7. Run ``` bash run.sh ```.  This will run cloud-provider in local while pointing to the API server of your kubernetes cluster.
+8. Open up another terminal and create required resources in your kubernetes cluster to test your changes.
+
 ## License
 
 Licensed under the Apache License, Version 2.0 (the "License");

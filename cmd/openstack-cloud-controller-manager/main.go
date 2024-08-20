@@ -20,6 +20,7 @@ limitations under the License.
 package main
 
 import (
+	"flag"
 	goflag "flag"
 	"fmt"
 	"math/rand"
@@ -33,7 +34,6 @@ import (
 	"k8s.io/cloud-provider/app/config"
 	"k8s.io/cloud-provider/options"
 	cliflag "k8s.io/component-base/cli/flag"
-	"k8s.io/component-base/logs"
 	_ "k8s.io/component-base/metrics/prometheus/restclient" // for client metric registration
 	_ "k8s.io/component-base/metrics/prometheus/version"    // for version metric registration
 	"k8s.io/klog/v2"
@@ -43,29 +43,53 @@ import (
 	"github.com/os-pc/cloud-provider-rackspace/pkg/version"
 )
 
+func checkCurrentLogLevel() {
+	flag.VisitAll(func(f *flag.Flag) {
+		if f.Name == "v" {
+			klog.Infof("Current log level: %s\n", f.Value)
+
+		}
+	})
+}
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
+	// Initialize klog
+	klog.InitFlags(nil)
+	defer klog.Flush()
+
+	// Register the custom flags explicitly
+	pflag.String("cloud-config", "", "Path to the cloud provider configuration file")
+	pflag.String("cluster-name", "", "The name of the Kubernetes cluster")
+	pflag.Bool("use-service-account-credentials", true, "Use service account credentials")
+	pflag.String("bind-address", "127.0.0.1", "The address to bind to")
+	pflag.String("cloud-provider", "openstack", "The cloud provider name")
+	pflag.String("kubeconfig", "", "Path to the kubeconfig file")
+	pflag.String("authentication-kubeconfig", "", "Path to the authentication kubeconfig file")
+
+	// Integrate goflag with pflag
+	pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
+	pflag.Parse()
+
+	// Parse the combined flags
+	if err := goflag.CommandLine.Parse([]string{}); err != nil {
+		fmt.Fprintf(os.Stderr, "error parsing flags: %v\n", err)
+		os.Exit(1)
+	}
+	checkCurrentLogLevel()
 	ccmOptions, err := options.NewCloudControllerManagerOptions()
 	if err != nil {
 		klog.Fatalf("unable to initialize command options: %v", err)
 	}
-
 	fss := cliflag.NamedFlagSets{}
 	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, app.DefaultInitFuncConstructors, fss, wait.NeverStop)
-
+	// Ensure flags from the openstack package are added
 	openstack.AddExtraFlags(pflag.CommandLine)
 
-	// TODO: once we switch everything over to Cobra commands, we can go back to calling
-	// utilflag.InitFlags() (by removing its pflag.Parse() call). For now, we have to set the
-	// normalize func and add the go flag set by hand.
-	// Here is an sample
+	// Normalize and add the goflag set
 	pflag.CommandLine.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
 	pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
-
-	// utilflag.InitFlags()
-	logs.InitLogs()
-	defer logs.FlushLogs()
 
 	klog.V(1).Infof("openstack-cloud-controller-manager version: %s", version.Version)
 
@@ -77,7 +101,6 @@ func main() {
 
 func cloudInitializer(config *config.CompletedConfig) cloudprovider.Interface {
 	cloudConfig := config.ComponentConfig.KubeCloudShared.CloudProvider
-
 	// initialize cloud provider with the cloud provider name and config file provided
 	cloud, err := cloudprovider.InitCloudProvider(cloudConfig.Name, cloudConfig.CloudConfigFile)
 	if err != nil {
