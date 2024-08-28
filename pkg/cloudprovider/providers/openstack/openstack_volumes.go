@@ -42,7 +42,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/os-pc/cloud-provider-rackspace/pkg/util/metadata"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (
