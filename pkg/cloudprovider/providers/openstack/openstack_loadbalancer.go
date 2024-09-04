@@ -29,7 +29,7 @@ import (
 	"github.com/gophercloud/gophercloud/pagination"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	v1service "github.com/os-pc/cloud-provider-rackspace/pkg/api/v1/service"
 	cpoerrors "github.com/os-pc/cloud-provider-rackspace/pkg/util/errors"
@@ -259,7 +259,7 @@ func (lbaas *CloudLb) createLoadBalancer(name string, vips []virtualips.CreateOp
 }
 
 func (lbaas *CloudLb) deleteLoadBalancers(lbs []loadbalancers.LoadBalancer) error {
-
+	klog.V(2).Infof("total available number of loadbalancers %s: ", len(lbs))
 	for _, loadbalancer := range lbs {
 		// delete loadbalancer
 		klog.V(4).Infof("Deleting load balancer %d: ", loadbalancer.ID)
@@ -491,7 +491,6 @@ func (lbaas *CloudLb) ensureLoadBalancerNodes(lbID uint64, port corev1.ServicePo
 // EnsureLoadBalancer creates a new load balancer or updates the existing one.
 func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string, apiService *corev1.Service, nodes []*corev1.Node) (*corev1.LoadBalancerStatus, error) {
 	serviceName := fmt.Sprintf("%s/%s", apiService.Namespace, apiService.Name)
-
 	klog.V(4).Infof("EnsureLoadBalancer(%s, %s)", clusterName, serviceName)
 
 	if len(nodes) == 0 {
@@ -648,7 +647,6 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 func (lbaas *CloudLb) UpdateLoadBalancer(ctx context.Context, clusterName string, service *corev1.Service, nodes []*corev1.Node) error {
 	serviceName := fmt.Sprintf("%s/%s", service.Namespace, service.Name)
 	klog.V(4).Infof("UpdateLoadBalancer(%v, %s, %v)", clusterName, serviceName, nodes)
-
 	ports := service.Spec.Ports
 	if len(ports) == 0 {
 		return fmt.Errorf("no ports provided to openstack load balancer")
@@ -685,7 +683,6 @@ func (lbaas *CloudLb) UpdateLoadBalancer(ctx context.Context, clusterName string
 func (lbaas *CloudLb) EnsureLoadBalancerDeleted(ctx context.Context, clusterName string, service *corev1.Service) error {
 	serviceName := fmt.Sprintf("%s/%s", service.Namespace, service.Name)
 	klog.V(4).Infof("EnsureLoadBalancerDeleted(%s, %s)", clusterName, serviceName)
-
 	name := lbaas.GetLoadBalancerName(ctx, clusterName, service)
 	lbs, err := openstackutil.GetLoadBalancersByName(lbaas.lb, name)
 	if err != nil {

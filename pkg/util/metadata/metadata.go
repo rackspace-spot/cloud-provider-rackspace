@@ -27,7 +27,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"github.com/os-pc/cloud-provider-rackspace/pkg/util/mount"
 	"k8s.io/utils/exec"

@@ -30,7 +30,7 @@ import (
 	version "github.com/hashicorp/go-version"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	cpoerrors "github.com/os-pc/cloud-provider-rackspace/pkg/util/errors"
 
