@@ -253,6 +253,12 @@ github.com/os-pc/gocloudlb v0.0.0-20210529010120-65b17b6d1ffa h1:1AqEZeYDKWyZrjA
 github.com/os-pc/gocloudlb v0.0.0-20210529010120-65b17b6d1ffa/go.mod h1:vCN4JD8GTX/YkdqM3FVBtGBuHwJdC8ZRcJJHllq6qas=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
+github.com/platform9/gophercloud v0.0.0-20230725192123-f5bf8afaa214 h1:bU1PqbNGTSunjQZ4UvRFuh2BwxHWNT7ov9oY2P3Ahc8=
+github.com/platform9/gophercloud v0.0.0-20230725192123-f5bf8afaa214/go.mod h1:aAVqcocTSXh2vYFZ1JTvx4EQmfgzxRcNupUfxZbBNDM=
+github.com/platform9/gophercloud-utils v0.0.0-20230725192416-bb0e57cadb96 h1:9V8M13+vmuVDVmIcEXCknMTWUS9Gq0k40V3FXRwSPLU=
+github.com/platform9/gophercloud-utils v0.0.0-20230725192416-bb0e57cadb96/go.mod h1:Qf8/V6MKkUzts4ma+TZEKLxRmS21iHi9raKDuet+d9Q=
+github.com/platform9/k8s-cloud-provider v0.0.0-20230630054839-fab92f8cbf80 h1:RfGKZixkVyrqmn5T/y2F5uE/sX+Z2UeKbYipiphLiGo=
+github.com/platform9/k8s-cloud-provider v0.0.0-20230630054839-fab92f8cbf80/go.mod h1:zIpLFNTyWQ7j7aC3DJ3NYFm0eOcD22OI9NUPBaiadso=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/prometheus/client_golang v1.16.0 h1:yk/hx9hDbrGHovbci4BY+pRMfSuuat626eFsHb7tmT8=
