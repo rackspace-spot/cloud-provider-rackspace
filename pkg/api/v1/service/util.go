@@ -21,20 +21,33 @@ import (
 	"strings"
 
 	netsets "github.com/os-pc/cloud-provider-rackspace/pkg/util/net/sets"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 )
 
 const (
-	defaultLoadBalancerSourceRanges = "0.0.0.0/0"
+	DefaultLoadBalancerSourceRanges = "0.0.0.0/0"
 )
 
 // IsAllowAll checks whether the netsets.IPNet allows traffic from 0.0.0.0/0
 func IsAllowAll(ipnets netsets.IPNet) bool {
 	for _, s := range ipnets.StringSlice() {
-		if s == "0.0.0.0/0" {
+		if s == DefaultLoadBalancerSourceRanges {
 			return true
 		}
 	}
+	return false
+}
+
+// IsOnlyAllowAll checks whether the netsets.IPNet allows traffic from 0.0.0.0/0
+func IsOnlyAllowAll(ipnets netsets.IPNet) bool {
+	s := ipnets.StringSlice()
+	if len(s) != 1 {
+		return false
+	}
+	if s[0] == DefaultLoadBalancerSourceRanges {
+		return true
+	}
+
 	return false
 }
 
@@ -48,7 +61,6 @@ func GetLoadBalancerSourceRanges(service *v1.Service) (netsets.IPNet, error) {
 	if len(service.Spec.LoadBalancerSourceRanges) > 0 {
 		specs := service.Spec.LoadBalancerSourceRanges
 		ipnets, err = netsets.ParseIPNets(specs...)
-
 		if err != nil {
 			return nil, fmt.Errorf("service.Spec.LoadBalancerSourceRanges: %v is not valid. Expecting a list of IP ranges. For example, 10.0.0.0/24. Error msg: %v", specs, err)
 		}
@@ -56,7 +68,7 @@ func GetLoadBalancerSourceRanges(service *v1.Service) (netsets.IPNet, error) {
 		val := service.Annotations[v1.AnnotationLoadBalancerSourceRangesKey]
 		val = strings.TrimSpace(val)
 		if val == "" {
-			val = defaultLoadBalancerSourceRanges
+			val = DefaultLoadBalancerSourceRanges
 		}
 		specs := strings.Split(val, ",")
 		ipnets, err = netsets.ParseIPNets(specs...)
