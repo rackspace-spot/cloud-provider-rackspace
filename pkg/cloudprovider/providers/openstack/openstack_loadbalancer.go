@@ -240,8 +240,7 @@ func cloneLBCreateVips(lb *loadbalancers.LoadBalancer) []virtualips.CreateOpts {
 	return ret
 }
 
-func (lbaas *CloudLb) createLoadBalancer(name string, vips []virtualips.CreateOpts, port corev1.ServicePort) (*loadbalancers.LoadBalancer, error) {
-
+func (lbaas *CloudLb) createLoadBalancer(name string, vips []virtualips.CreateOpts, port corev1.ServicePort, keepClientIP bool) (*loadbalancers.LoadBalancer, error) {
 	createOpts := loadbalancers.CreateOpts{
 		Name:       name,
 		Protocol:   toLBProtocol(port.Protocol),
@@ -250,8 +249,12 @@ func (lbaas *CloudLb) createLoadBalancer(name string, vips []virtualips.CreateOp
 		Nodes:      []lbnodes.CreateOpts{},
 	}
 
-	loadbalancer, err := loadbalancers.Create(lbaas.lb, createOpts).Extract()
+	if keepClientIP {
+		klog.V(4).Infof("Forcing to use 'HTTP' protocol for listener because %s annotation is set", ServiceAnnotationLoadBalancerXForwardedFor)
+		createOpts.Protocol = "HTTP"
+	}
 
+	loadbalancer, err := loadbalancers.Create(lbaas.lb, createOpts).Extract()
 	if err != nil {
 		return nil, fmt.Errorf("error creating loadbalancer %v: %v", createOpts, err)
 	}
@@ -504,10 +507,10 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 
 	var err error
 
-	// Check for TCP protocol on each port
+	// Check for TCP & UDP protocol on each port
 	for _, port := range ports {
-		if port.Protocol != corev1.ProtocolTCP {
-			return nil, fmt.Errorf("only TCP LoadBalancer is supported for openstack load balancers")
+		if (port.Protocol != corev1.ProtocolTCP) && (port.Protocol != corev1.ProtocolUDP) {
+			return nil, fmt.Errorf("only TCP or UDP LoadBalancer protocol is supported for openstack load balancers")
 		}
 	}
 
@@ -560,12 +563,17 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 		}
 	}
 
+	keepClientIP, err := getBoolFromServiceAnnotation(apiService, ServiceAnnotationLoadBalancerXForwardedFor, false)
+	if err != nil {
+		return nil, fmt.Errorf("error getting %s annotation for Service %s: %v", ServiceAnnotationLoadBalancerXForwardedFor, serviceName, err)
+	}
+
 	for _, port := range ports {
 		loadbalancer, err := openstackutil.GetLoadBalancerByPort(lbs, port)
 		if err == openstackutil.ErrNotFound {
 			klog.V(2).Infof("Creating loadbalancer %s for port %d", name, port.Port)
 
-			loadbalancer, err = lbaas.createLoadBalancer(name, vips, port)
+			loadbalancer, err = lbaas.createLoadBalancer(name, vips, port, keepClientIP)
 			if err != nil {
 				return nil, fmt.Errorf("error creating loadbalancer %s: %v", name, err)
 			}
