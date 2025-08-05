@@ -129,6 +129,6 @@ require (
 replace (
 	github.com/gophercloud/gophercloud => github.com/platform9/gophercloud v0.0.0-20230725192123-f5bf8afaa214
 	github.com/gophercloud/utils => github.com/platform9/gophercloud-utils v0.0.0-20230725192416-bb0e57cadb96
-	github.com/os-pc/gocloudlb => github.com/rackspace-spot/gocloudlb v0.0.0-20250728140201-6d0e808d2620
+	github.com/os-pc/gocloudlb => github.com/rackspace-spot/gocloudlb v0.0.0-20250805033408-726ea5832e03
 	k8s.io/cloud-provider => github.com/platform9/k8s-cloud-provider v0.0.0-20230630054839-fab92f8cbf80
 )

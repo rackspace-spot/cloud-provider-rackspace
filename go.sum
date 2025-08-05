@@ -268,8 +268,8 @@ github.com/prometheus/common v0.42.0 h1:EKsfXEYo4JpWMHH5cg+KOUWeuJSov1Id8zGR8eeI
 github.com/prometheus/common v0.42.0/go.mod h1:xBwqVerjNdUDjgODMpudtOMwlOwf2SaTr1yjz4b7Zbc=
 github.com/prometheus/procfs v0.10.1 h1:kYK1Va/YMlutzCGazswoHKo//tZVlFpKYh+PymziUAg=
 github.com/prometheus/procfs v0.10.1/go.mod h1:nwNm2aOCAYw8uTR/9bWRREkZFxAUcWzPHWJq+XBB/FM=
-github.com/rackspace-spot/gocloudlb v0.0.0-20250728140201-6d0e808d2620 h1:6fTTyopqTF1gHLBkqMhkYGGiRJ3EdiSsBEZRPffOe2E=
-github.com/rackspace-spot/gocloudlb v0.0.0-20250728140201-6d0e808d2620/go.mod h1:vCN4JD8GTX/YkdqM3FVBtGBuHwJdC8ZRcJJHllq6qas=
+github.com/rackspace-spot/gocloudlb v0.0.0-20250805033408-726ea5832e03 h1:NIILQljs7JERnvUzLAT9gyLWmI0P/tHsB3WWVaXpSkw=
+github.com/rackspace-spot/gocloudlb v0.0.0-20250805033408-726ea5832e03/go.mod h1:vCN4JD8GTX/YkdqM3FVBtGBuHwJdC8ZRcJJHllq6qas=
 github.com/rogpeppe/fastuuid v1.2.0/go.mod h1:jVj6XXZzXRy/MSR5jhDC/2q6DgLz+nrA6LYCDYWNEvQ=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.10.0 h1:TMyTOH3F/DB16zRVcYyreMH6GnZZrwQVAoYjRBZyWFQ=
