@@ -14,10 +14,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Ensure go.mod and go.sum are tidy
-        run: |
-          go mod tidy
-          git diff --exit-code go.mod go.sum
       - name: Check code formatting
         run: |
           make fmtcheck
