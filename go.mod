@@ -121,8 +121,14 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
+// To update the forked versions, execute the following commands:
+// go mod edit -replace=github.com/gophercloud/gophercloud=github.com/platform9/gophercloud@master && go mod tidy
+// go mod edit -replace=github.com/gophercloud/utils=github.com/platform9/gophercloud-utils@master && go mod tidy
+// go mod edit -replace=k8s.io/cloud-provider=github.com/platform9/k8s-cloud-provider@release-1.27 && go mod tidy
+
 replace (
 	github.com/gophercloud/gophercloud => github.com/platform9/gophercloud v0.0.0-20230725192123-f5bf8afaa214
 	github.com/gophercloud/utils => github.com/platform9/gophercloud-utils v0.0.0-20230725192416-bb0e57cadb96
+	github.com/os-pc/gocloudlb => github.com/rackspace-spot/gocloudlb v0.0.0-20250805033408-726ea5832e03
 	k8s.io/cloud-provider => github.com/platform9/k8s-cloud-provider v0.0.0-20230630054839-fab92f8cbf80
 )

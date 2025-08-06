@@ -35,6 +35,7 @@ import (
 	cpoerrors "github.com/os-pc/cloud-provider-rackspace/pkg/util/errors"
 	openstackutil "github.com/os-pc/cloud-provider-rackspace/pkg/util/openstack"
 
+	"github.com/os-pc/gocloudlb/accesslists"
 	"github.com/os-pc/gocloudlb/loadbalancers"
 	lbnodes "github.com/os-pc/gocloudlb/nodes"
 	"github.com/os-pc/gocloudlb/virtualips"
@@ -75,6 +76,8 @@ const (
 	// ServiceAnnotationLoadBalancerEnableHealthMonitor defines whether or not to create health monitor for the load balancer
 	// pool, if not specified, use 'create-monitor' config. The health monitor can be created or deleted dynamically.
 	ServiceAnnotationLoadBalancerEnableHealthMonitor = "loadbalancer.openstack.org/enable-health-monitor"
+
+	DefaultBatch = 10
 )
 
 // CloudLb is a LoadBalancer implementation for Rackspace Cloud LoadBalancer API
@@ -168,7 +171,6 @@ func waitLoadbalancerActiveStatus(client *gophercloud.ServiceClient, loadbalance
 		} else {
 			return false, nil
 		}
-
 	})
 
 	if err == wait.ErrWaitTimeout {
@@ -204,7 +206,12 @@ func waitLoadbalancerDeleted(client *gophercloud.ServiceClient, loadbalancerID u
 	return err
 }
 
-func toLBProtocol(protocol corev1.Protocol) string {
+func toLBProtocol(protocol corev1.Protocol, keepClientIP bool) string {
+	if keepClientIP {
+		klog.V(2).Infof("Forcing to use 'HTTP' protocol for listener because %s annotation is set", ServiceAnnotationLoadBalancerXForwardedFor)
+		return "HTTP"
+	}
+
 	switch protocol {
 	case corev1.ProtocolTCP:
 		return "TCP_CLIENT_FIRST"
@@ -214,7 +221,6 @@ func toLBProtocol(protocol corev1.Protocol) string {
 }
 
 func createLBCreateVips(service *corev1.Service) ([]virtualips.CreateOpts, error) {
-	//internalAnnotation, err := getBoolFromServiceAnnotation(apiService, ServiceAnnotationLoadBalancerInternal, false)
 	internalAnnotation := false
 	var lbType string
 	switch internalAnnotation {
@@ -240,18 +246,17 @@ func cloneLBCreateVips(lb *loadbalancers.LoadBalancer) []virtualips.CreateOpts {
 	return ret
 }
 
-func (lbaas *CloudLb) createLoadBalancer(name string, vips []virtualips.CreateOpts, port corev1.ServicePort) (*loadbalancers.LoadBalancer, error) {
-
+func (lbaas *CloudLb) createLoadBalancer(name string, vips []virtualips.CreateOpts, port corev1.ServicePort, keepClientIP bool, accessLists []accesslists.CreateOpts) (*loadbalancers.LoadBalancer, error) {
 	createOpts := loadbalancers.CreateOpts{
 		Name:       name,
-		Protocol:   toLBProtocol(port.Protocol),
+		Protocol:   toLBProtocol(port.Protocol, keepClientIP),
 		Port:       port.Port,
 		VirtualIps: vips,
 		Nodes:      []lbnodes.CreateOpts{},
+		AccessList: accessLists,
 	}
 
 	loadbalancer, err := loadbalancers.Create(lbaas.lb, createOpts).Extract()
-
 	if err != nil {
 		return nil, fmt.Errorf("error creating loadbalancer %v: %v", createOpts, err)
 	}
@@ -259,7 +264,7 @@ func (lbaas *CloudLb) createLoadBalancer(name string, vips []virtualips.CreateOp
 }
 
 func (lbaas *CloudLb) deleteLoadBalancers(lbs []loadbalancers.LoadBalancer) error {
-	klog.V(2).Infof("total available number of loadbalancers %s: ", len(lbs))
+	klog.V(2).Infof("total available number of loadbalancers %d: ", len(lbs))
 	for _, loadbalancer := range lbs {
 		// delete loadbalancer
 		klog.V(4).Infof("Deleting load balancer %d: ", loadbalancer.ID)
@@ -360,13 +365,13 @@ func nodeAddressForLB(node *corev1.Node) (string, error) {
 func getStringFromServiceAnnotation(service *corev1.Service, annotationKey string, defaultSetting string) string {
 	klog.V(4).Infof("getStringFromServiceAnnotation(%v, %v, %v)", service, annotationKey, defaultSetting)
 	if annotationValue, ok := service.Annotations[annotationKey]; ok {
-		//if there is an annotation for this setting, set the "setting" var to it
+		// if there is an annotation for this setting, set the "setting" var to it
 		// annotationValue can be empty, it is working as designed
 		// it makes possible for instance provisioning loadbalancer without floatingip
 		klog.V(4).Infof("Found a Service Annotation: %v = %v", annotationKey, annotationValue)
 		return annotationValue
 	}
-	//if there is no annotation, set "settings" var to the value from cloud config
+	// if there is no annotation, set "settings" var to the value from cloud config
 	klog.V(4).Infof("Could not find a Service Annotation; falling back on cloud-config setting: %v = %v", annotationKey, defaultSetting)
 	return defaultSetting
 }
@@ -504,20 +509,24 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 
 	var err error
 
-	// Check for TCP protocol on each port
+	// Check for TCP & UDP protocol on each port
 	for _, port := range ports {
-		if port.Protocol != corev1.ProtocolTCP {
-			return nil, fmt.Errorf("only TCP LoadBalancer is supported for openstack load balancers")
+		if (port.Protocol != corev1.ProtocolTCP) && (port.Protocol != corev1.ProtocolUDP) {
+			return nil, fmt.Errorf("only TCP or UDP LoadBalancer protocol is supported for openstack load balancers")
 		}
 	}
 
-	//var listenerAllowedCIDRs []string
+	var sourceRangesCIDRs []accesslists.CreateOpts
 	sourceRanges, err := v1service.GetLoadBalancerSourceRanges(apiService)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source ranges for loadbalancer service %s: %v", serviceName, err)
 	}
-	if !v1service.IsAllowAll(sourceRanges) {
-		return nil, fmt.Errorf("source range restrictions are not supported for openstack load balancers without managing security groups")
+	klog.V(2).Infof("Source ranges for Service %s: %+v", serviceName, sourceRanges)
+	if !v1service.IsOnlyAllowAll(sourceRanges) {
+		for _, sr := range sourceRanges.StringSlice() {
+			sourceRangesCIDRs = append(sourceRangesCIDRs, accesslists.CreateOpts{Address: sr, Type: accesslists.Allow})
+		}
+		sourceRangesCIDRs = append(sourceRangesCIDRs, accesslists.CreateOpts{Address: v1service.DefaultLoadBalancerSourceRanges, Type: accesslists.Deny})
 	}
 
 	/* gonna handle this later
@@ -544,10 +553,11 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 
 	// if we already have one load balancer for this service, we need to copy its
 	// settings to ensure we share IPs for the other ports in the service
+	klog.Infof("Source ranges CIDRs for Service %s: %+v", serviceName, sourceRangesCIDRs)
 	var vips []virtualips.CreateOpts
 	if len(lbs) > 0 {
 		vips = cloneLBCreateVips(&lbs[0])
-		var vipIds = make(map[int]uint64)
+		vipIds := make(map[int]uint64)
 		for i, vip := range vips {
 			vipIds[i] = vip.ID
 		}
@@ -560,25 +570,43 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 		}
 	}
 
+	keepClientIP, err := getBoolFromServiceAnnotation(apiService, ServiceAnnotationLoadBalancerXForwardedFor, false)
+	if err != nil {
+		return nil, fmt.Errorf("error getting %s annotation for Service %s: %v", ServiceAnnotationLoadBalancerXForwardedFor, serviceName, err)
+	}
+
 	for _, port := range ports {
 		loadbalancer, err := openstackutil.GetLoadBalancerByPort(lbs, port)
+		klog.V(2).Infof("LoadBalancer %s for port %d: %+v", name, port.Port, loadbalancer)
 		if err == openstackutil.ErrNotFound {
 			klog.V(2).Infof("Creating loadbalancer %s for port %d", name, port.Port)
 
-			loadbalancer, err = lbaas.createLoadBalancer(name, vips, port)
+			loadbalancer, err = lbaas.createLoadBalancer(name, vips, port, keepClientIP, sourceRangesCIDRs)
 			if err != nil {
 				return nil, fmt.Errorf("error creating loadbalancer %s: %v", name, err)
 			}
 			// since we created our load balancer here, we need to replace vip settings
 			// for any future ones created
 			vips = cloneLBCreateVips(loadbalancer)
-			var vipIds = make(map[int]uint64)
+			vipIds := make(map[int]uint64)
 			for i, vip := range vips {
 				vipIds[i] = vip.ID
 			}
 			klog.V(2).Infof("Switching to existing VIPs %v for Service %s", vipIds, serviceName)
 		} else {
 			klog.V(2).Infof("LoadBalancer %s already exists", loadbalancer.Name)
+			err = lbaas.ensureLoadBalancerAccesslists(loadbalancer.ID, sourceRangesCIDRs, serviceName)
+			if err != nil {
+				return nil, fmt.Errorf("error ensuring access lists for load balancer %d: %v", loadbalancer.ID, err)
+			}
+			// If the load balancer already exists, we need to update its protocol if required.
+			newLbProtocol := toLBProtocol(port.Protocol, keepClientIP)
+			if loadbalancer.Protocol != newLbProtocol {
+				err = lbaas.UpdateLBProtocol(loadbalancer, newLbProtocol)
+				if err != nil {
+					return nil, fmt.Errorf("error updating load balancer protocol for port %d: %v", loadbalancer.ID, err)
+				}
+			}
 			lbs = popLB(lbs, loadbalancer)
 		}
 
@@ -641,6 +669,94 @@ func (lbaas *CloudLb) EnsureLoadBalancer(ctx context.Context, clusterName string
 	//}
 
 	return status, nil
+}
+
+func IsAccessListModified(currentAccessLists []accesslists.NetworkItem, newAccessLists []accesslists.CreateOpts) bool {
+	klog.V(2).Infof("Checking if access lists are modified, current: %+v, new: %+v", currentAccessLists, newAccessLists)
+	// Check if the current access lists are different from the new access lists
+	if len(currentAccessLists) != len(newAccessLists) {
+		return true
+	}
+
+	// Check if the addresses in the current access lists are different from the new access lists
+	accessListMap := make(map[string]struct{}, len(newAccessLists))
+	for _, networkItem := range newAccessLists {
+		accessListMap[networkItem.Address] = struct{}{}
+	}
+
+	for _, networkItem := range currentAccessLists {
+		if _, found := accessListMap[networkItem.Address]; !found {
+			return true
+		}
+	}
+
+	// Check if the addresses in the new access lists are different from the current access lists
+	activeAccessListMap := make(map[string]struct{}, len(currentAccessLists))
+	for _, networkItem := range currentAccessLists {
+		activeAccessListMap[networkItem.Address] = struct{}{}
+	}
+
+	for _, networkItem := range newAccessLists {
+		if _, found := activeAccessListMap[networkItem.Address]; !found {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (lbaas *CloudLb) ensureLoadBalancerAccesslists(lbID uint64, sourceRangesCIDRs []accesslists.CreateOpts, serviceName string) error {
+	// Get the current access lists for the load balancer
+	accessLists, err := accesslists.Get(lbaas.lb, lbID).Extract()
+	if err != nil && !cpoerrors.IsNotFound(err) {
+		return fmt.Errorf("error getting access lists for load balancer %d: %v", lbID, err)
+	}
+	klog.V(2).Infof("Current access lists for load balancer %d: %v", lbID, accessLists)
+
+	if IsAccessListModified(accessLists, sourceRangesCIDRs) {
+		// We don't need to delete the access lists if there is nothing to update
+		// so that we can avoid the error as this won't allow the below POST to succeed:
+		// {"code":422,"message":"Load Balancer '<lb-id>' has a status of 'PENDING_UPDATE' and is considered immutable."}
+		if len(accessLists) != 0 {
+			klog.V(2).Infof("Access lists for load balancer %d are modified, updating access lists", lbID)
+			err := accesslists.DeleteAll(lbaas.lb, lbID).ExtractErr()
+			if err != nil && !cpoerrors.IsNotFound(err) {
+				return fmt.Errorf("error deleting access lists for load balancer %d: %v", lbID, err)
+			}
+		}
+
+		// If the source ranges CIDRs are empty, we will not update the access lists
+		if len(sourceRangesCIDRs) == 0 {
+			klog.V(2).Infof("No source ranges CIDRs for Service %s, skipping access lists update & deleting anything if exists", serviceName)
+			return nil
+		}
+
+		klog.V(2).Infof("Adding access lists %v to load balancer %d", sourceRangesCIDRs, lbID)
+		err = accesslists.Create(lbaas.lb, lbID, sourceRangesCIDRs).ExtractErr()
+		if err != nil && !cpoerrors.IsNotFound(err) {
+			return fmt.Errorf("error adding access lists for load balancer %d: %v", lbID, err)
+		}
+
+	}
+
+	return nil
+}
+
+func (lbaas *CloudLb) UpdateLBProtocol(lb *loadbalancers.LoadBalancer, protocol string) error {
+	updateOpts := loadbalancers.UpdateOpts{
+		Name:      lb.Name,
+		Protocol:  protocol,
+		Port:      lb.Port,
+		Algorithm: lb.Algorithm,
+		Timeout:   lb.Timeout,
+	}
+
+	klog.V(2).Infof("updating loadbalancer protocol to '%s' for loadbalancer %d of port %d", protocol, lb.ID, lb.Port)
+	err := loadbalancers.Update(lbaas.lb, lb.ID, updateOpts).ExtractErr()
+	if err != nil {
+		return fmt.Errorf("error updating loadbalancer protocol '%s' for loadbalancer %d: %v", protocol, lb.ID, err)
+	}
+	return nil
 }
 
 // UpdateLoadBalancer updates hosts under the specified load balancer.
