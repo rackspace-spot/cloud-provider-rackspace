@@ -78,6 +78,7 @@ const (
 	ServiceAnnotationLoadBalancerEnableHealthMonitor = "loadbalancer.openstack.org/enable-health-monitor"
 
 	DefaultBatch = 10
+	NodeLimit    = 25
 )
 
 // CloudLb is a LoadBalancer implementation for Rackspace Cloud LoadBalancer API
@@ -453,6 +454,11 @@ func (lbaas *CloudLb) ensureLoadBalancerNodes(lbID uint64, port corev1.ServicePo
 			klog.V(6).Infof("%s:%d is part of load balancer %d", addr, port.NodePort, lbID)
 			memberNodes = popNode(memberNodes, addr, int(port.NodePort))
 		}
+	}
+
+	if len(addNodes) > 25 {
+		klog.V(2).Infof("Load balancer %d: number of nodes to add %d exceeds %d, picking first %d nodes to add", lbID, len(addNodes), NodeLimit, NodeLimit)
+		addNodes = addNodes[:NodeLimit]
 	}
 
 	if len(addNodes) > 0 {
