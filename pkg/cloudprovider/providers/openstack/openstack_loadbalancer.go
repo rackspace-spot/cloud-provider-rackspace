@@ -20,6 +20,7 @@ package openstack
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -78,7 +79,7 @@ const (
 	ServiceAnnotationLoadBalancerEnableHealthMonitor = "loadbalancer.openstack.org/enable-health-monitor"
 
 	DefaultBatch = 10
-	NodeLimit    = 25
+	MaxNodeLimit = 25
 )
 
 // CloudLb is a LoadBalancer implementation for Rackspace Cloud LoadBalancer API
@@ -430,6 +431,16 @@ func (lbaas *CloudLb) ensureLoadBalancerNodes(lbID uint64, port corev1.ServicePo
 		return fmt.Errorf("error getting load balancer nodes %d: %v", lbID, err)
 	}
 	var addNodes []lbnodes.CreateOpts
+
+	// if we have more than MaxNodeLimit nodes, sort them by name to have a consistent order
+	if len(nodes) > MaxNodeLimit {
+		klog.V(2).Infof("More than %d nodes, sorting nodes by name to have a consistent order", MaxNodeLimit)
+		// sort nodes based on node name to have a consistent order
+		sort.Slice(nodes, func(i, j int) bool {
+			return nodes[i].Name < nodes[j].Name
+		})
+	}
+
 	for _, node := range nodes {
 		addr, err := nodeAddressForLB(node)
 		if err != nil {
@@ -456,13 +467,35 @@ func (lbaas *CloudLb) ensureLoadBalancerNodes(lbID uint64, port corev1.ServicePo
 		}
 	}
 
-	if len(addNodes) > 25 {
-		klog.V(2).Infof("Load balancer %d: number of nodes to add %d exceeds %d, picking first %d nodes to add", lbID, len(addNodes), NodeLimit, NodeLimit)
-		addNodes = addNodes[:NodeLimit]
+	// Delete obsolete nodes for this pool
+	for _, node := range memberNodes {
+		klog.V(4).Infof("Deleting obsolete node %d for loadbalancer %s address %s", node.ID, lbID, node.Address)
+		err := lbnodes.Delete(lbaas.lb, lbID, node.ID).ExtractErr()
+		if err != nil && !cpoerrors.IsNotFound(err) {
+			return fmt.Errorf("error deleting obsolete node %d for load balancer %d address %s: %v", node.ID, lbID, node.Address, err)
+		}
+		provisioningStatus, err := waitLoadbalancerActiveStatus(lbaas.lb, lbID)
+		if err != nil {
+			return fmt.Errorf("timeout when waiting for loadbalancer to be ACTIVE after deleting member, current provisioning status %s", provisioningStatus)
+		}
+	}
+
+	// Re-fetch current members after deletion
+	memberNodes, err = getNodesByLBID(lbaas.lb, lbID)
+	if err != nil && !cpoerrors.IsNotFound(err) {
+		return fmt.Errorf("error getting load balancer nodes after deletion %d: %v", lbID, err)
+	}
+
+	allowedToAdd := MaxNodeLimit - len(memberNodes)
+	if allowedToAdd < 0 {
+		allowedToAdd = 0
+	}
+	if allowedToAdd < len(addNodes) {
+		addNodes = addNodes[:allowedToAdd]
 	}
 
 	if len(addNodes) > 0 {
-		klog.V(4).Infof("Adding nodes to load balancer %d", lbID)
+		klog.V(4).Infof("Adding %s nodes to load balancer %d", len(addNodes), lbID)
 		_, createErr := lbnodes.Create(lbaas.lb, lbID, addNodes).Extract()
 		if createErr != nil {
 			return fmt.Errorf("error adding nodes to load balancer: %d, %v", lbID, createErr)
@@ -477,19 +510,6 @@ func (lbaas *CloudLb) ensureLoadBalancerNodes(lbID uint64, port corev1.ServicePo
 	}
 
 	klog.V(4).Infof("Ensured load balancer %d has member nodes", lbID)
-
-	// Delete obsolete nodes for this pool
-	for _, node := range memberNodes {
-		klog.V(4).Infof("Deleting obsolete node %d for loadbalancer %s address %s", node.ID, lbID, node.Address)
-		err := lbnodes.Delete(lbaas.lb, lbID, node.ID).ExtractErr()
-		if err != nil && !cpoerrors.IsNotFound(err) {
-			return fmt.Errorf("error deleting obsolete node %d for load balancer %d address %s: %v", node.ID, lbID, node.Address, err)
-		}
-		provisioningStatus, err := waitLoadbalancerActiveStatus(lbaas.lb, lbID)
-		if err != nil {
-			return fmt.Errorf("timeout when waiting for loadbalancer to be ACTIVE after deleting member, current provisioning status %s", provisioningStatus)
-		}
-	}
 
 	return nil
 }
