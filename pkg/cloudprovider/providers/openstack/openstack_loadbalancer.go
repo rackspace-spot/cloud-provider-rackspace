@@ -495,7 +495,7 @@ func (lbaas *CloudLb) ensureLoadBalancerNodes(lbID uint64, port corev1.ServicePo
 	}
 
 	if len(addNodes) > 0 {
-		klog.V(4).Infof("Adding %s nodes to load balancer %d", len(addNodes), lbID)
+		klog.V(4).Infof("Adding %d nodes to load balancer %d", len(addNodes), lbID)
 		_, createErr := lbnodes.Create(lbaas.lb, lbID, addNodes).Extract()
 		if createErr != nil {
 			return fmt.Errorf("error adding nodes to load balancer: %d, %v", lbID, createErr)
