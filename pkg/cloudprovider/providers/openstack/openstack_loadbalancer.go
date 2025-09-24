@@ -488,9 +488,11 @@ func (lbaas *CloudLb) ensureLoadBalancerNodes(lbID uint64, port corev1.ServicePo
 
 	allowedToAdd := MaxNodeLimit - len(memberNodes)
 	if allowedToAdd < 0 {
+		klog.V(2).Infof("Load balancer %d already has maximum number of nodes %d, nothing to add.", lbID, MaxNodeLimit)
 		allowedToAdd = 0
 	}
 	if allowedToAdd < len(addNodes) {
+		klog.V(2).Infof("Load balancer %d has %d nodes, can only add %d more nodes to reach the maximum of %d nodes.", lbID, len(memberNodes), allowedToAdd, MaxNodeLimit)
 		addNodes = addNodes[:allowedToAdd]
 	}
 
