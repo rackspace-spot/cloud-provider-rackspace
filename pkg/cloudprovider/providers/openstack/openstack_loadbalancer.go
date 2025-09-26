@@ -469,7 +469,7 @@ func (lbaas *CloudLb) ensureLoadBalancerNodes(lbID uint64, port corev1.ServicePo
 
 	// Delete obsolete nodes for this pool
 	for _, node := range memberNodes {
-		klog.V(4).Infof("Deleting obsolete node %d for loadbalancer %s address %s", node.ID, lbID, node.Address)
+		klog.V(4).Infof("Deleting obsolete node %d for loadbalancer %d address %s", node.ID, lbID, node.Address)
 		err := lbnodes.Delete(lbaas.lb, lbID, node.ID).ExtractErr()
 		if err != nil && !cpoerrors.IsNotFound(err) {
 			return fmt.Errorf("error deleting obsolete node %d for load balancer %d address %s: %v", node.ID, lbID, node.Address, err)
